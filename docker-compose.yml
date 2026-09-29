@@ -1,0 +1,16 @@
+# Local development services. Run: docker compose up -d
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: emily-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: emily
+      POSTGRES_PASSWORD: emily
+      POSTGRES_DB: emily
+    ports:
+      - "5432:5432"
+    volumes:
+      - emily-pgdata:/var/lib/postgresql/data
+volumes:
+  emily-pgdata:
