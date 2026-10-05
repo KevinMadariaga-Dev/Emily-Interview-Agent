@@ -18,6 +18,9 @@ const serverSchema = z.object({
   VOICE_PROVIDER: z.enum(["deepgram", "openai-realtime"]).default("deepgram"),
   DEEPGRAM_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
+  OPENAI_STT_MODEL: z.string().default("gpt-4o-mini-transcribe"),
+  OPENAI_TTS_MODEL: z.string().default("gpt-4o-mini-tts"),
+  OPENAI_TTS_VOICE: z.string().default("coral"),
 
   LLM_PROVIDER: z.enum(["openai", "anthropic"]).default("openai"),
   LLM_MODEL: z.string().default("gpt-4.1-mini"),
@@ -26,6 +29,12 @@ const serverSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("Emily <onboarding@resend.dev>"),
   EMAIL_REPORT_TO: z.string().default(""),
+  // Gmail SMTP (App Password). When set, reports are sent from this Gmail account.
+  GMAIL_USER: z.string().optional(),
+  GMAIL_APP_PASSWORD: z.string().optional(),
+  GMAIL_FROM_NAME: z.string().default("Emily · NEOera"),
+  // Optional comma list of emails or @domains allowed to receive interview reports.
+  REPORT_EMAIL_ALLOWLIST: z.string().default(""),
 
   NOTION_API_KEY: z.string().optional(),
   NOTION_DATA_SOURCE_ID: z.string().optional(),

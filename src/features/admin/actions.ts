@@ -10,18 +10,21 @@ import { createShareToken } from "@/lib/tokens";
 import { db, schema } from "@/server/db/client";
 import { requireAdmin } from "./auth";
 
-/** DEV ONLY: sign in as an allow-listed email. Replaced by magic-link auth before production. */
-export async function devLogin(formData: FormData) {
-  const email = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase();
-  const allowed = env()
-    .ADMIN_ALLOWED_EMAILS.split(",")
-    .map((e) => e.trim().toLowerCase());
+// DEV ONLY test account. Disabled in production; replaced by magic-link auth (plan step 1.1).
+const TEST_USER = { username: "user", password: "user" };
+
+export async function login(formData: FormData) {
+  const username = String(formData.get("username") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
   const secret = env().ADMIN_SESSION_SECRET;
-  if (env().NODE_ENV === "production" || !secret || !allowed.includes(email))
-    redirect("/admin/login?error=1");
-  (await cookies()).set(ADMIN_COOKIE, createAdminCookieValue(email, secret), {
+  if (
+    env().NODE_ENV === "production" ||
+    !secret ||
+    username !== TEST_USER.username ||
+    password !== TEST_USER.password
+  )
+    redirect("/login?error=1");
+  (await cookies()).set(ADMIN_COOKIE, createAdminCookieValue(username, secret), {
     httpOnly: true,
     sameSite: "lax",
     secure: env().NODE_ENV === "production",
@@ -33,7 +36,7 @@ export async function devLogin(formData: FormData) {
 
 export async function logout() {
   (await cookies()).delete(ADMIN_COOKIE);
-  redirect("/admin/login");
+  redirect("/login");
 }
 
 const templateSchema = z.object({

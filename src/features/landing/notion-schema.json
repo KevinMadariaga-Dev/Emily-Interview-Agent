@@ -1,0 +1,60 @@
+{
+  "Entrevista": {
+    "title": {}
+  },
+  "Proyecto": {
+    "rich_text": {}
+  },
+  "Participante": {
+    "rich_text": {}
+  },
+  "Empresa": {
+    "rich_text": {}
+  },
+  "Fecha": {
+    "date": {}
+  },
+  "Información obtenida": {
+    "number": {
+      "format": "percent"
+    }
+  },
+  "Veredicto": {
+    "select": {
+      "options": [
+        {
+          "name": "Éxito",
+          "color": "green"
+        },
+        {
+          "name": "Parcial",
+          "color": "yellow"
+        },
+        {
+          "name": "Insuficiente",
+          "color": "red"
+        }
+      ]
+    }
+  },
+  "Objetivo cumplido": {
+    "checkbox": {}
+  },
+  "Idioma": {
+    "select": {
+      "options": [
+        {
+          "name": "Español"
+        },
+        {
+          "name": "English"
+        }
+      ]
+    }
+  },
+  "Preguntas": {
+    "number": {
+      "format": "number"
+    }
+  }
+}

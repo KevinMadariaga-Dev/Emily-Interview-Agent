@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   // Server-only packages that must not be bundled for the client.
-  serverExternalPackages: ["postgres"],
+  serverExternalPackages: ["postgres", "nodemailer"],
   async headers() {
     return [
       {

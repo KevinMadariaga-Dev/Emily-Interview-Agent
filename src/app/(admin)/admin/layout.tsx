@@ -1,23 +1,17 @@
 import Link from "next/link";
-import { logout } from "@/features/admin/actions";
+import { SidebarNav } from "@/features/admin/sidebar-nav";
 
-/** Admin shell. Auth is enforced by src/proxy.ts and requireAdmin() in each page. */
+/** Admin shell. No login for now (see src/proxy.ts). */
 export default function AdminLayout({ children }: LayoutProps<"/admin">) {
   return (
-    <div className="flex min-h-full flex-1">
-      <aside className="border-border hidden w-56 shrink-0 border-r p-6 md:block">
-        <Link href="/admin" className="text-lg font-semibold">
-          Emily Admin
+    <div className="flex min-h-full flex-1 flex-col md:flex-row">
+      <aside className="border-border bg-card flex flex-col gap-4 border-b p-4 md:sticky md:top-0 md:h-dvh md:w-60 md:shrink-0 md:border-r md:border-b-0 md:p-6">
+        <Link href="/" className="text-lg font-semibold">
+          Emily <span className="text-accent">·</span> NEOera
         </Link>
-        <nav className="mt-8 flex flex-col gap-3 text-sm">
-          <Link href="/admin">Sessions</Link>
-          <Link href="/admin/templates">Templates & links</Link>
-          <form action={logout}>
-            <button className="text-muted">Sign out</button>
-          </form>
-        </nav>
+        <SidebarNav />
       </aside>
-      <main className="flex-1 p-6 md:p-10">{children}</main>
+      <main className="flex-1 px-4 py-8 md:px-10">{children}</main>
     </div>
   );
 }
