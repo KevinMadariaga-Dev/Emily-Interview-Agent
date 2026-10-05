@@ -148,6 +148,17 @@ Every place that needs a real API key or unfinished integration is marked with *
 grep -rn "TODO(" src
 ```
 
+## Dependency security
+
+`pnpm audit` runs in CI and fails on **high/critical** advisories. Production dependencies
+(`pnpm audit --prod`) have no known vulnerabilities. Two dev-only findings are handled in
+`package.json → pnpm`:
+
+| Advisory | Path | Decision |
+| --- | --- | --- |
+| esbuild ≤0.24.2 — dev server can be read by any site ([GHSA-67mh-4wv8-2f99](https://github.com/advisories/GHSA-67mh-4wv8-2f99)) | `drizzle-kit → @esbuild-kit/core-utils → esbuild` | **Fixed** with `pnpm.overrides` → `esbuild ^0.25.4` (same range drizzle-kit uses itself; `pnpm db:generate` verified). |
+| braces ≤3.0.3 — stack-exhaustion DoS with deeply nested patterns ([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)) | `eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces` | **Accepted** (`pnpm.auditConfig.ignoreGhsas`): no patched version exists; it only runs at lint time over our own `rootDir` setting, never on user input or in the production bundle. Remove the ignore when a fix ships. |
+
 ## Deployment (production)
 
 1. Create a Postgres database (Neon or Supabase) and copy the **pooled** connection string.
