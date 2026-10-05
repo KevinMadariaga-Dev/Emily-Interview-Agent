@@ -138,7 +138,7 @@ export function useInterviewSession({
           }
         }
         silences = 0;
-        if (answer) push({ role: "participant", text: answer });
+        if (answer) push({ role: "participant", text: answer, q: next.asking });
       }
     } catch (err) {
       setError(

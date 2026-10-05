@@ -184,7 +184,12 @@ Devuelve SOLO JSON: {"questions": [...], "note": una frase breve explicando qué
 
 // ── Test interview: Emily runs the configured interview by voice ────────────────────────────
 
-const turnSchema = z.object({ role: z.enum(["emily", "participant"]), text: z.string().max(4000) });
+const turnSchema = z.object({
+  role: z.enum(["emily", "participant"]),
+  text: z.string().max(4000),
+  /** Required question this participant turn answers (shown under it in Notion). */
+  q: z.number().int().min(-1).max(19).optional(),
+});
 export type Turn = z.infer<typeof turnSchema>;
 const historySchema = z.array(turnSchema).max(80);
 

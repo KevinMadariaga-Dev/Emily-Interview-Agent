@@ -10,7 +10,7 @@ import { clientIp, rateLimit } from "@/lib/rate-limit";
 import type { InterviewSummary, Turn } from "./ai";
 import { normalizeDraft, type Draft } from "./config";
 import { renderInterviewEmail } from "./report-email";
-import { toNotionInterviewPage } from "./report-notion";
+import { NOTION_BATCH, toNotionInterviewPage } from "./report-notion";
 
 export type ReportStatus =
   | { sent: true; to: string; via: "gmail" | "resend" }
@@ -86,10 +86,26 @@ export async function saveInterviewToNotion(
       history,
       at: new Date(),
     });
-    const created = await notionRequest<{ url: string }>("/pages", { method: "POST", body: page });
+    // Notion takes ≤100 blocks per request: create the page with the first batch, then append
+    // the rest in order so long interviews keep every line.
+    const [first, ...rest] = chunks(page.children, NOTION_BATCH);
+    const created = await notionRequest<{ id: string; url: string }>("/pages", {
+      method: "POST",
+      body: { ...page, children: first ?? [] },
+    });
+    for (const batch of rest)
+      await notionRequest(`/blocks/${created.id}/children`, {
+        method: "PATCH",
+        body: { children: batch },
+      });
     return { saved: true, url: created.url };
   } catch (err) {
     logger.error("saveInterviewToNotion failed", { err: String(err) });
     return { saved: false, reason: "failed" };
   }
 }
+
+const chunks = <T>(items: T[], size: number) =>
+  Array.from({ length: Math.ceil(items.length / size) }, (_, i) =>
+    items.slice(i * size, i * size + size),
+  );
