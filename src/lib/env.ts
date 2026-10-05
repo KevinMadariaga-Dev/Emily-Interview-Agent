@@ -10,7 +10,10 @@ import { z } from "zod";
 const serverSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   NEXT_PUBLIC_APP_URL: z.url().default("http://localhost:3000"),
-  DATABASE_URL: z.string().min(1),
+  // Optional: the landing (Emily setup, interviews, email/Notion) runs without a database.
+  DATABASE_URL: z.string().optional(), // "" = not configured (requireEnv rejects it)
+  // Optional password for the whole site (HTTP Basic) — see src/proxy.ts.
+  SITE_PASSWORD: z.string().optional(), // "" = no password
 
   ADMIN_SESSION_SECRET: z.string().min(16).optional(),
   ADMIN_ALLOWED_EMAILS: z.string().default(""),

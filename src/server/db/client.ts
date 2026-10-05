@@ -1,7 +1,7 @@
 import "server-only";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { env } from "@/lib/env";
+import { requireEnv } from "@/lib/env";
 import * as schema from "./schema";
 
 export type Database = PostgresJsDatabase<typeof schema>;
@@ -15,7 +15,7 @@ const globalForDb = globalThis as unknown as { __emilyDb?: Database };
 
 export function db(): Database {
   if (!globalForDb.__emilyDb) {
-    const client = postgres(env().DATABASE_URL, { max: 5, prepare: false });
+    const client = postgres(requireEnv("DATABASE_URL"), { max: 5, prepare: false });
     globalForDb.__emilyDb = drizzle(client, { schema, casing: "snake_case" });
   }
   return globalForDb.__emilyDb;
