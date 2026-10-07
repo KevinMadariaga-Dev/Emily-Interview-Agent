@@ -82,7 +82,8 @@ export function useInterviewSession({
       const result = await summarizeInterview(draft, hist.current);
       setSummary(result);
       const answered = hist.current.some((t) => t.role === "participant");
-      if (slug && answered) saveResult(slug, draft.project, result, hist.current.length);
+      if (slug && answered)
+        saveResult(slug, draft.project, result, hist.current.length, draft.locale);
       // Email the report (Gmail/Resend) to the Emily's report address; never blocks the ending.
       // Same report into Notion (skipped server-side when Notion isn't configured).
       if (answered) {
@@ -143,7 +144,9 @@ export function useInterviewSession({
     } catch (err) {
       setError(
         err instanceof Error && err.message === "timeout"
-          ? "Emily tardó demasiado en responder. Revisa tu conexión y vuelve a intentarlo."
+          ? draft.locale === "es"
+            ? "Emily tardó demasiado en responder. Revisa tu conexión y vuelve a intentarlo."
+            : "Emily took too long to answer. Check your connection and try again."
           : micError(err),
       );
       onMode("listening");

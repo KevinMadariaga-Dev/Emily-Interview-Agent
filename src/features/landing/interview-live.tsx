@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { InterviewSummary } from "./ai";
 import type { NotionStatus, ReportStatus } from "./report";
 import { coverage, verdict, type AnswerStatus, type Draft, type QuestionKind } from "./config";
+import { LangProvider, useLang } from "./i18n";
 import { CheckIcon, MicIcon, SendIcon, SparkIcon, StopIcon, XIcon } from "./icons";
 import { field, IconBtn, primary, quiet, type Msg } from "./ui";
 import { useInterviewSession } from "./use-interview";
@@ -28,6 +29,7 @@ export function InterviewLive({
   /** When set, the result is saved under this Emily (shown in "Resultados"). */
   slug?: string;
 }) {
+  const { t, setLang } = useLang();
   const [typed, setTyped] = useState("");
   const listEnd = useRef<HTMLLIElement>(null);
   const questions = draft.questions;
@@ -61,16 +63,14 @@ export function InterviewLive({
   const recording = voice.state === "recording";
 
   return (
-    <section aria-label="Entrevista" className="flex min-h-[70dvh] flex-col gap-5">
+    <section aria-label={t.lTitle} className="flex min-h-[70dvh] flex-col gap-5">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <p className="text-accent text-sm font-medium">Entrevista de prueba</p>
+          <p className="text-accent text-sm font-medium">{t.lTitle}</p>
           <h2 className="text-3xl font-semibold tracking-[-0.03em] text-balance">
             {draft.project}
           </h2>
-          <p className="text-muted text-sm">
-            Tú eres el participante: responde hablando o escribiendo, como lo haría tu cliente.
-          </p>
+          <p className="text-muted text-sm">{t.lSubtitle}</p>
         </div>
         {onExit && (
           <button
@@ -81,7 +81,7 @@ export function InterviewLive({
               onExit();
             }}
           >
-            <XIcon className="h-4 w-4" /> Salir
+            <XIcon className="h-4 w-4" /> {t.lExit}
           </button>
         )}
       </header>
@@ -89,25 +89,22 @@ export function InterviewLive({
       {phase === "ready" ? (
         <div className="grid flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="border-border bg-card flex flex-col items-center justify-center gap-5 rounded-2xl border p-10 text-center">
-            <p className="max-w-md text-lg">
-              Emily te hará {total} {total === 1 ? "pregunta" : "preguntas"}. Responde hablando
-              (ella nota cuando haces una pausa) o escribiendo.
-            </p>
-            <p className="text-muted text-sm">
-              {openai ? "Voz y escucha con OpenAI." : "Voz del navegador: usa Chrome o Edge."}
-            </p>
+            <p className="max-w-md text-lg">{t.lIntro(total)}</p>
+            <p className="text-muted text-sm">{openai ? t.pOpenai : t.lBrowser}</p>
             <button className={`${primary} px-8 py-4 text-base`} onClick={() => void run()}>
-              <MicIcon className="h-5 w-5" /> Comenzar entrevista
+              <MicIcon className="h-5 w-5" /> {t.pStart}
             </button>
           </div>
           <QuestionChecklist questions={questions} covered={-1} />
         </div>
       ) : phase === "done" && summary ? (
-        <div className="space-y-4">
-          <ReportNotice report={report} to={draft.reportEmail} />
-          <NotionNotice notion={notion} />
-          <SuccessReport summary={summary} onRestart={restart} onExit={onExit} />
-        </div>
+        <LangProvider value={{ lang: draft.locale, setLang }}>
+          <div lang={draft.locale} className="space-y-4">
+            <ReportNotice report={report} to={draft.reportEmail} />
+            <NotionNotice notion={notion} />
+            <SuccessReport summary={summary} onRestart={restart} onExit={onExit} />
+          </div>
+        </LangProvider>
       ) : (
         <div className="grid flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="flex min-h-0 flex-col gap-4">
@@ -143,7 +140,7 @@ export function InterviewLive({
               {phase === "summarizing" && (
                 <li className="text-muted flex items-center gap-2 text-sm">
                   <span className="border-accent h-3.5 w-3.5 animate-spin rounded-full border-2 border-t-transparent" />
-                  Evaluando la información obtenida…
+                  {t.lEvaluating}
                 </li>
               )}
               <li ref={listEnd} aria-hidden />
@@ -160,19 +157,19 @@ export function InterviewLive({
                 <p className="text-muted flex h-5 items-center gap-2 text-sm">
                   {recording && <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />}
                   {recording
-                    ? "Te escucho… habla o escribe tu respuesta."
+                    ? t.lRecording
                     : voice.state === "transcribing"
-                      ? "Entendiendo tu respuesta…"
+                      ? t.pUnderstanding
                       : voice.state === "speaking"
-                        ? "Emily está hablando…"
-                        : "Emily está pensando…"}
+                        ? `${t.speaking}…`
+                        : t.lThinking}
                 </p>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={voice.stop}
                     disabled={!recording}
-                    aria-label="Ya terminé de responder"
+                    aria-label={t.pDoneTalking}
                     className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-lg transition-[scale,opacity] duration-160 ease-out active:scale-[0.95] disabled:opacity-40 ${
                       recording ? "bg-red-500" : "bg-accent"
                     }`}
@@ -181,9 +178,7 @@ export function InterviewLive({
                   </button>
                   <input
                     className={field}
-                    placeholder={
-                      recording ? "…o escribe tu respuesta y pulsa Enter" : "Espera tu turno…"
-                    }
+                    placeholder={recording ? t.typePh : t.lWait}
                     value={typed}
                     disabled={!recording}
                     onChange={(e) => setTyped(e.target.value)}
@@ -195,14 +190,14 @@ export function InterviewLive({
                     }}
                   />
                   <IconBtn
-                    label="Enviar respuesta escrita"
+                    label={t.pSend}
                     disabled={!typed.trim() || !recording}
                     onClick={sendTyped}
                   >
                     <SendIcon className="h-4 w-4" />
                   </IconBtn>
                   <button className={`${quiet} shrink-0`} onClick={() => void finish()}>
-                    Terminar
+                    {t.finish}
                   </button>
                 </div>
               </div>
@@ -224,14 +219,15 @@ function QuestionChecklist({
   questions: { text: string; kind: QuestionKind }[];
   covered: number;
 }) {
+  const { t } = useLang();
   const done = Math.max(0, Math.min(covered, questions.length));
   return (
-    <aside aria-label="Preguntas" className="space-y-3">
+    <aside aria-label={t.lQuestions} className="space-y-3">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="font-medium">Preguntas</h3>
+        <h3 className="font-medium">{t.lQuestions}</h3>
         {covered >= 0 && (
           <span className="text-muted text-xs tabular-nums">
-            {done} de {questions.length} cubiertas
+            {t.lCovered(done, questions.length)}
           </span>
         )}
       </div>
@@ -267,7 +263,9 @@ function QuestionChecklist({
               </span>
               <span className="flex-1 leading-snug">
                 {q.text}
-                <span className="text-muted ml-1.5 text-xs">· {q.kind}</span>
+                <span className="text-muted ml-1.5 text-xs">
+                  · {q.kind === "abierta" ? t.open : t.closed}
+                </span>
               </span>
             </li>
           );
@@ -277,16 +275,10 @@ function QuestionChecklist({
   );
 }
 
-const statusStyle: Record<AnswerStatus, { label: string; className: string }> = {
-  completa: {
-    label: "Completa",
-    className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-  },
-  parcial: { label: "Parcial", className: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
-  sin_respuesta: {
-    label: "Sin respuesta",
-    className: "bg-red-500/15 text-red-700 dark:text-red-300",
-  },
+const statusStyle: Record<AnswerStatus, string> = {
+  completa: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  parcial: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  sin_respuesta: "bg-red-500/15 text-red-700 dark:text-red-300",
 };
 
 const toneColor = { ok: "#10b981", mid: "#f59e0b", low: "#ef4444" } as const;
@@ -301,6 +293,7 @@ export function SuccessReport({
   onRestart?: () => void;
   onExit?: () => void;
 }) {
+  const { t } = useLang();
   const pct = coverage(summary.answers);
   const v = verdict(pct);
   const R = 52;
@@ -310,11 +303,7 @@ export function SuccessReport({
   return (
     <div className="space-y-6">
       <div className="border-border bg-card grid items-center gap-6 rounded-2xl border p-6 md:grid-cols-[auto_1fr]">
-        <div
-          className="relative mx-auto h-36 w-36"
-          role="img"
-          aria-label={`${pct}% de la información obtenida`}
-        >
+        <div className="relative mx-auto h-36 w-36" role="img" aria-label={t.pctAria(pct)}>
           <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
             <circle cx="60" cy="60" r={R} fill="none" strokeWidth="10" className="stroke-border" />
             <circle
@@ -334,7 +323,7 @@ export function SuccessReport({
           <div className="absolute inset-0 grid place-items-center text-center">
             <span>
               <span className="block text-3xl font-semibold tabular-nums">{pct}%</span>
-              <span className="text-muted text-xs">información</span>
+              <span className="text-muted text-xs">{t.infoWord}</span>
             </span>
           </div>
         </div>
@@ -344,30 +333,26 @@ export function SuccessReport({
               className="rounded-full px-3 py-1 text-sm font-semibold text-white"
               style={{ background: toneColor[v.tone] }}
             >
-              {v.label}
+              {t.verdictLabel[v.tone]}
             </span>
             <span className="text-muted text-sm">
-              {counts("completa")} completas · {counts("parcial")} parciales ·{" "}
-              {counts("sin_respuesta")} sin respuesta
+              {t.counts(counts("completa"), counts("parcial"), counts("sin_respuesta"))}
             </span>
           </p>
           <p className="leading-relaxed">
-            <strong>
-              {summary.objective.met ? "Objetivo cumplido." : "Objetivo no cumplido."}
-            </strong>{" "}
-            {summary.objective.reason}
+            <strong>{summary.objective.met ? t.met : t.notMet}</strong> {summary.objective.reason}
           </p>
           <p className="text-muted text-sm leading-relaxed">{summary.summary}</p>
           {(onRestart || onExit) && (
             <div className="flex flex-wrap gap-3 pt-1">
               {onRestart && (
                 <button className={primary} onClick={onRestart}>
-                  Repetir prueba
+                  {t.repeat}
                 </button>
               )}
               {onExit && (
                 <button className={quiet} onClick={onExit}>
-                  Volver
+                  {t.back}
                 </button>
               )}
             </div>
@@ -382,9 +367,9 @@ export function SuccessReport({
               <dt className="flex items-start justify-between gap-3 text-sm">
                 <span className="text-muted">{a.question}</span>
                 <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[a.status].className}`}
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[a.status]}`}
                 >
-                  {statusStyle[a.status].label}
+                  {t.status[a.status]}
                 </span>
               </dt>
               <dd>{a.answer}</dd>
@@ -392,12 +377,12 @@ export function SuccessReport({
           ))}
         </dl>
         <div className="space-y-4">
-          <InfoList title="Información clave" items={summary.keyFacts} />
-          <InfoList title="Dolores y problemas" items={summary.painPoints} />
-          <InfoList title="Hallazgos" items={summary.insights} />
+          <InfoList title={t.keyFacts} items={summary.keyFacts} />
+          <InfoList title={t.pains} items={summary.painPoints} />
+          <InfoList title={t.insights} items={summary.insights} />
           {(summary.quotes?.length ?? 0) > 0 && (
             <div className="border-border bg-card space-y-3 rounded-2xl border p-6">
-              <h3 className="font-semibold">Citas del participante</h3>
+              <h3 className="font-semibold">{t.quotes}</h3>
               {summary.quotes.map((q) => (
                 <blockquote key={q} className="border-accent border-l-2 pl-3 text-sm italic">
                   “{q}”
@@ -405,33 +390,24 @@ export function SuccessReport({
               ))}
             </div>
           )}
-          <InfoList title="Próximos pasos y oportunidades" items={summary.nextSteps} />
+          <InfoList title={t.nextSteps} items={summary.nextSteps} />
         </div>
       </div>
     </div>
   );
 }
 
-const reportReasons: Record<string, string> = {
-  not_configured:
-    "No se envió el correo: falta conectar Gmail (GMAIL_USER y GMAIL_APP_PASSWORD en .env.local).",
-  not_allowed:
-    "No se envió el correo: ese destinatario no está permitido (REPORT_EMAIL_ALLOWLIST).",
-  rate_limited: "No se envió el correo: demasiados envíos seguidos, espera unos minutos.",
-  failed: "No se pudo enviar el correo. Revisa la contraseña de aplicación de Gmail.",
-  no_recipient: "",
-};
-
 /** Where the emailed report went (or why it didn't). */
 function ReportNotice({ report, to }: { report: ReportStatus | "sending" | null; to: string }) {
+  const { t } = useLang();
   if (!to) return null;
   const msg =
     report === "sending"
-      ? `Enviando el resumen a ${to}…`
+      ? t.sending(to)
       : report?.sent
-        ? `Resumen enviado por correo a ${report.to}.`
+        ? t.sent(report.to)
         : report
-          ? reportReasons[report.reason]
+          ? t.reportReason[report.reason as keyof typeof t.reportReason]
           : "";
   if (!msg) return null;
   const ok = report !== "sending" && !!report?.sent;
@@ -458,6 +434,7 @@ function ReportNotice({ report, to }: { report: ReportStatus | "sending" | null;
 
 /** Whether the report landed in Notion (silent when Notion isn't configured). */
 function NotionNotice({ notion }: { notion: NotionStatus | "saving" | null }) {
+  const { t } = useLang();
   if (!notion || (notion !== "saving" && !notion.saved && notion.reason === "not_configured"))
     return null;
   const base = "flex items-center gap-2 rounded-xl px-4 py-3 text-sm";
@@ -465,7 +442,7 @@ function NotionNotice({ notion }: { notion: NotionStatus | "saving" | null }) {
     return (
       <p role="status" className={`${base} bg-accent-soft/60 text-accent`}>
         <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-        Guardando en Notion…
+        {t.notionSaving}
       </p>
     );
   if (notion.saved)
@@ -474,17 +451,15 @@ function NotionNotice({ notion }: { notion: NotionStatus | "saving" | null }) {
         role="status"
         className={`${base} bg-emerald-500/10 text-emerald-700 dark:text-emerald-300`}
       >
-        <CheckIcon className="h-4 w-4" /> Guardado en Notion.
+        <CheckIcon className="h-4 w-4" /> {t.notionSaved}
         <a href={notion.url} target="_blank" rel="noreferrer" className="font-medium underline">
-          Abrir página ↗
+          {t.notionOpen}
         </a>
       </p>
     );
   return (
     <p role="status" className={`${base} bg-amber-500/10 text-amber-800 dark:text-amber-300`}>
-      {notion.reason === "rate_limited"
-        ? "No se guardó en Notion: demasiados envíos seguidos, espera unos minutos."
-        : "No se pudo guardar en Notion. Revisa que la base esté compartida con la integración."}
+      {notion.reason === "rate_limited" ? t.notionRate : t.notionFail}
     </p>
   );
 }

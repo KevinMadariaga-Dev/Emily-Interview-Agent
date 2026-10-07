@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Draft } from "./config";
+import { dict } from "./i18n";
 import { MicIcon, SendIcon, StopIcon } from "./icons";
 import { loadEmily } from "./store";
 import { useInterviewSession } from "./use-interview";
@@ -11,6 +12,7 @@ import { VoiceOrb, type OrbMode } from "./voice-orb";
 /** What the participant opens at /e/<slug>. Loads the Emily saved in this browser. */
 export function PublicEmily({ slug }: { slug: string }) {
   const [draft, setDraft] = useState<Draft | null | undefined>(undefined); // undefined = loading
+  const t = dict[draft?.locale ?? "es"];
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- read-once from browser storage
@@ -18,7 +20,10 @@ export function PublicEmily({ slug }: { slug: string }) {
   }, [slug]);
 
   return (
-    <main className="bg-accent-deep relative flex min-h-dvh flex-col overflow-hidden text-white">
+    <main
+      lang={draft?.locale ?? "es"}
+      className="bg-accent-deep relative flex min-h-dvh flex-col overflow-hidden text-white"
+    >
       <header className="flex items-center justify-between gap-4 px-6 py-5 md:px-10">
         <p className="text-sm font-semibold tracking-[0.3em] uppercase">
           NEO<span className="text-violet-300">era</span>
@@ -30,13 +35,10 @@ export function PublicEmily({ slug }: { slug: string }) {
       ) : (
         <section className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
           <VoiceOrb mode="listening" />
-          <h1 className="text-3xl font-semibold tracking-[-0.03em]">Esta Emily no está aquí</h1>
-          <p className="max-w-md text-violet-200">
-            Por ahora cada Emily se guarda en el navegador donde se creó. Ábrela desde ese mismo
-            navegador, o crea una nueva.
-          </p>
+          <h1 className="text-3xl font-semibold tracking-[-0.03em]">{t.pNotHere}</h1>
+          <p className="max-w-md text-violet-200">{t.pNotHereBody}</p>
           <Link href="/" className={light}>
-            Crear una Emily
+            {t.pCreate}
           </Link>
         </section>
       )}
@@ -59,6 +61,7 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
   const [typing, setTyping] = useState(false);
   const [typed, setTyped] = useState("");
   const s = useInterviewSession({ draft, slug, onMode: setMode });
+  const t = dict[draft.locale];
   const { phase, voice, history, asking } = s;
   const total = draft.questions.length;
   const current = asking >= 0 ? draft.questions[asking] : undefined;
@@ -67,16 +70,16 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
 
   const status =
     phase === "ready"
-      ? "Lista para empezar"
+      ? t.pReady
       : phase === "summarizing"
-        ? "Guardando tus respuestas…"
+        ? t.pSaving
         : voice.state === "speaking"
-          ? "Emily está hablando"
+          ? t.speaking
           : recording
-            ? "Te escucho"
+            ? t.pListening
             : voice.state === "transcribing"
-              ? "Entendiendo tu respuesta…"
-              : "Pensando…";
+              ? t.pUnderstanding
+              : t.pThinking;
   const tone =
     voice.state === "speaking" || phase === "summarizing"
       ? "bg-fuchsia-300"
@@ -90,15 +93,13 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
       <section className="flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-12 text-center">
         <VoiceOrb mode="listening" />
         <h1 className="animate-rise text-4xl font-semibold tracking-[-0.03em] md:text-5xl">
-          ¡Gracias{draft.recipientName ? `, ${draft.recipientName}` : ""}!
+          {t.pThanks(draft.recipientName)}
         </h1>
         <p
           className="animate-rise max-w-md text-lg text-balance text-violet-200"
           style={{ animationDelay: "80ms" }}
         >
-          {s.error
-            ? "Tuvimos un problema al guardar tus respuestas. Por favor avísale a quien te envió este link."
-            : "Tus respuestas quedaron registradas. Ya puedes cerrar esta ventana."}
+          {s.error ? t.pSaveError : t.pSaved}
         </p>
       </section>
     );
@@ -122,12 +123,9 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
       {phase === "ready" ? (
         <div className="max-w-xl space-y-6">
           <h1 className="text-4xl font-semibold tracking-[-0.03em] text-balance md:text-5xl">
-            Hola{draft.recipientName ? `, ${draft.recipientName}` : ""}. Soy Emily.
+            {t.pHello(draft.recipientName)}
           </h1>
-          <p className="text-lg text-balance text-violet-200">
-            Te haré {total} {total === 1 ? "pregunta" : "preguntas"} sobre {draft.project}. Responde
-            hablando, con tus palabras; noto cuando haces una pausa.
-          </p>
+          <p className="text-lg text-balance text-violet-200">{t.pIntro(total, draft.project)}</p>
           <label className="mx-auto flex max-w-md items-start gap-3 text-left text-sm text-violet-100">
             <input
               type="checkbox"
@@ -135,14 +133,13 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
             />
-            Acepto que esta conversación se grabe y transcriba para fines de investigación.
+            {t.pConsent}
           </label>
           <button className={light} disabled={!consent} onClick={() => void s.run()}>
-            <MicIcon className="h-5 w-5" /> Comenzar entrevista
+            <MicIcon className="h-5 w-5" /> {t.pStart}
           </button>
           <p className="text-xs text-violet-300">
-            {s.openai ? "Voz y escucha con OpenAI." : "Usa Chrome o Edge."} Necesitarás tu
-            micrófono.
+            {s.openai ? t.pOpenai : t.pBrowser} {t.pMic}
           </p>
         </div>
       ) : (
@@ -154,7 +151,7 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
               className="animate-rise w-full max-w-3xl rounded-3xl border border-white/20 bg-white/10 px-8 py-7 shadow-[0_24px_60px_-24px_rgb(0_0_0/0.6)] ring-1 ring-fuchsia-300/30 backdrop-blur"
             >
               <p className="text-sm font-medium tracking-wide text-violet-200 tabular-nums">
-                Pregunta {asking + 1} de {total}
+                {t.pQuestionOf(asking + 1, total)}
               </p>
               <p className="mt-2 text-2xl leading-snug font-semibold tracking-[-0.01em] text-balance md:text-3xl">
                 {current.text}
@@ -165,9 +162,7 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
               aria-live="polite"
               className="animate-rise max-w-xl text-2xl font-medium text-balance"
             >
-              {phase === "summarizing"
-                ? "Un momento…"
-                : `Hola${draft.recipientName ? `, ${draft.recipientName}` : ""}. Soy Emily, de NEOera.`}
+              {phase === "summarizing" ? t.pMoment : t.pHelloLong(draft.recipientName)}
             </p>
           )}
           <p className="min-h-6 max-w-2xl text-violet-200 italic">
@@ -182,7 +177,7 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
             <div
               className="flex items-center gap-1.5"
               role="img"
-              aria-label={`Pregunta ${Math.max(asking + 1, 0)} de ${total}`}
+              aria-label={t.pQuestionOf(Math.max(asking + 1, 0), total)}
             >
               {draft.questions.map((_, i) => (
                 <span
@@ -211,7 +206,7 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
                 <button
                   onClick={voice.stop}
                   disabled={!recording}
-                  aria-label="Ya terminé de responder"
+                  aria-label={t.pDoneTalking}
                   className={`grid h-14 w-14 place-items-center rounded-full shadow-lg transition-[scale,background-color,opacity] duration-160 ease-out active:scale-[0.95] disabled:opacity-40 ${
                     recording ? "bg-white text-red-500" : "bg-white/15 text-white"
                   }`}
@@ -219,10 +214,10 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
                   {recording ? <StopIcon /> : <MicIcon />}
                 </button>
                 <button className={ghost} onClick={() => setTyping((t) => !t)}>
-                  {typing ? "Ocultar teclado" : "Escribir respuesta"}
+                  {typing ? t.pHideKb : t.pTypeAnswer}
                 </button>
                 <button className={ghost} onClick={() => void s.finish()}>
-                  Terminar
+                  {t.finish}
                 </button>
               </div>
               {typing && (
@@ -235,16 +230,14 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
                 >
                   <input
                     className="w-full rounded-full border border-white/20 bg-white/10 px-5 py-3 text-white placeholder:text-violet-300 focus:border-white/60 focus:outline-none"
-                    placeholder={
-                      recording ? "Escribe tu respuesta…" : "Espera a que Emily termine…"
-                    }
+                    placeholder={recording ? t.pTypePh : t.pWaitPh}
                     value={typed}
                     disabled={!recording}
                     onChange={(e) => setTyped(e.target.value)}
                     autoFocus
                   />
                   <button
-                    aria-label="Enviar respuesta"
+                    aria-label={t.pSend}
                     disabled={!recording || !typed.trim()}
                     className="text-accent-deep grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white disabled:opacity-40"
                   >

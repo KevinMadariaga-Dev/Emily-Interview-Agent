@@ -97,7 +97,8 @@ ${QUESTION_RULES}
       ...toQuestions(plan.questions.map((q) => q.text)),
     ].slice(0, 15),
   };
-  const missing = missingFields({ ...draft, ...patch } as Draft);
+  const names = { project: "el proyecto", objective: "el objetivo", questions: "las preguntas" };
+  const missing = missingFields({ ...draft, ...patch } as Draft).map((m) => names[m]);
   const reply = missing.length
     ? `Anotado. Ahora cuéntame ${missing.join(" y ")}.`
     : `Listo, organicé ${patch.questions!.length} preguntas. Revisa los campos y pulsa Crear Emily.`;
@@ -180,6 +181,85 @@ Devuelve SOLO JSON: {"questions": [...], "note": una frase breve explicando qué
     note: `Agregué ${Math.min(extra.length, 10 - existing.length)} preguntas sugeridas (sin IA).`,
     source: "local",
   };
+}
+
+const translationSchema = z.object({
+  project: z.string().max(160),
+  objective: z.string().max(800),
+  questions: z
+    .array(z.object({ text: z.string().max(300), kind: z.enum(["abierta", "cerrada"]) }))
+    .max(15),
+  areas: z.array(z.string().max(60)).max(10),
+});
+export type DraftTranslation = z.infer<typeof translationSchema>;
+
+/**
+ * The ES/EN switch: translates what the admin already wrote (project, goal, questions, follow-up
+ * areas) so Emily asks it in the new language. Names and brands are kept. null = no AI available.
+ */
+export async function translateDraft(
+  draft: Draft,
+  to: "es" | "en",
+): Promise<DraftTranslation | null> {
+  draft = normalizeDraft(draft);
+  await allow("translate");
+  if (!hasLlm()) return null;
+  try {
+    const result = await askJson(
+      `Traduce el contenido de una entrevista al ${to === "es" ? "español latinoamericano neutro" : "inglés (EE. UU.)"}.
+- Conserva nombres propios, empresas, marcas y productos tal cual.
+- Las preguntas deben sonar naturales al decirse en voz alta; conserva el tipo ("abierta"/"cerrada") de cada una y su orden.
+- Si algo ya está en el idioma destino, déjalo igual. No agregues ni quites elementos.
+Responde SOLO JSON: {"project": string, "objective": string, "questions": [{"text": string, "kind": "abierta"|"cerrada"}], "areas": string[]}.`,
+      JSON.stringify({
+        project: draft.project,
+        objective: draft.objective,
+        questions: draft.questions,
+        areas: draft.areas,
+      }),
+      translationSchema,
+    );
+    return result;
+  } catch (err) {
+    logger.error("translateDraft failed", { err: String(err) });
+    return null;
+  }
+}
+
+/**
+ * "Resultados" in the other UI language: translates a saved summary's texts. Grading (status,
+ * objective met) is copied from the original, never re-decided by the model.
+ */
+export async function translateSummary(
+  summary: InterviewSummary,
+  to: "es" | "en",
+): Promise<InterviewSummary | null> {
+  const input = summarySchema.parse(summary);
+  await allow("translate");
+  if (!hasLlm()) return null;
+  try {
+    const out = await askJson(
+      `Traduce al ${to === "es" ? "español latinoamericano neutro" : "inglés (EE. UU.)"} el resumen de una entrevista (JSON).
+- Traduce solo los textos; conserva claves, orden y cantidad de elementos de cada lista.
+- No cambies "status" ni "met". Conserva nombres propios, empresas, marcas y cifras.
+- Si algo ya está en el idioma destino, déjalo igual.
+Responde SOLO el JSON traducido, con las mismas claves.`,
+      JSON.stringify(input),
+      summarySchema,
+    );
+    return {
+      ...out,
+      answers: input.answers.map((a, i) => ({
+        ...a,
+        question: out.answers[i]?.question || a.question,
+        answer: out.answers[i]?.answer || a.answer,
+      })),
+      objective: { met: input.objective.met, reason: out.objective.reason },
+    };
+  } catch (err) {
+    logger.error("translateSummary failed", { err: String(err) });
+    return null;
+  }
 }
 
 // ── Test interview: Emily runs the configured interview by voice ────────────────────────────
@@ -304,7 +384,7 @@ export async function summarizeInterview(draft: Draft, history: Turn[]): Promise
   if (hasLlm()) {
     try {
       const result = await askJson(
-        `Resume una entrevista de investigación. Idioma: ${draft.locale === "es" ? "español" : "English"}.
+        `Resume una entrevista de investigación. Escribe TODO el texto (summary, insights, answers, reason, listas) en ${draft.locale === "es" ? "español" : "inglés (English)"}; las citas, tal como las dijo.
 Objetivo: ${draft.objective}. Preguntas obligatorias: ${qs.join(" | ")}.
 Evalúa con rigor si se obtuvo la información de CADA pregunta obligatoria:
 - "completa": respondió con información concreta y útil para el objetivo.
@@ -316,7 +396,7 @@ Extrae también la información importante para el objetivo, SOLO lo que el part
 - "quotes": 1-4 citas textuales, literales y cortas, que capturen su punto de vista.
 - "nextSteps": oportunidades o próximos pasos recomendados para el equipo a partir de lo dicho.
 Listas vacías si no hay información suficiente.
-Responde SOLO JSON: {"summary": 2-4 frases, "insights": 2-5 hallazgos accionables, "answers": [{"question": pregunta obligatoria (una por cada una, en orden), "answer": lo que respondió en 1-2 frases o "Sin respuesta", "status": "completa"|"parcial"|"sin_respuesta"}], "objective": {"met": boolean (¿la entrevista cumplió el objetivo?), "reason": 1 frase}, "keyFacts": [], "painPoints": [], "quotes": [], "nextSteps": []}.`,
+Responde SOLO JSON: {"summary": 2-4 frases, "insights": 2-5 hallazgos accionables, "answers": [{"question": pregunta obligatoria (una por cada una, en orden), "answer": lo que respondió en 1-2 frases o "${draft.locale === "es" ? "Sin respuesta" : "No answer"}", "status": "completa"|"parcial"|"sin_respuesta"}], "objective": {"met": boolean (¿la entrevista cumplió el objetivo?), "reason": 1 frase}, "keyFacts": [], "painPoints": [], "quotes": [], "nextSteps": []}.`,
         JSON.stringify({ history: turns }),
         summarySchema,
       );
@@ -333,7 +413,11 @@ Responde SOLO JSON: {"summary": 2-4 frases, "insights": 2-5 hallazgos accionable
   const answers = qs.map((q, i) => {
     const a = said[i]?.trim() ?? "";
     const status = !a ? "sin_respuesta" : a.split(/\s+/).length >= 6 ? "completa" : "parcial";
-    return { question: q, answer: a || "Sin respuesta", status } as const;
+    return {
+      question: q,
+      answer: a || (draft.locale === "es" ? "Sin respuesta" : "No answer"),
+      status,
+    } as const;
   });
   const met = answers.filter((a) => a.status === "completa").length >= Math.ceil(qs.length * 0.8);
   return {

@@ -9,10 +9,14 @@ export type Question = { text: string; kind: QuestionKind };
  * it guesses the language per line and switched to English/garbled phonetics mid-interview.
  */
 export const voices = [
-  { id: "coral", name: "Coral", desc: "Cálida y cercana" },
-  { id: "nova", name: "Nova", desc: "Enérgica y clara" },
-  { id: "shimmer", name: "Shimmer", desc: "Suave y tranquila" },
-  { id: "sage", name: "Sage", desc: "Serena y profesional" },
+  { id: "coral", name: "Coral", desc: { es: "Cálida y cercana", en: "Warm and friendly" } },
+  { id: "nova", name: "Nova", desc: { es: "Enérgica y clara", en: "Energetic and clear" } },
+  { id: "shimmer", name: "Shimmer", desc: { es: "Suave y tranquila", en: "Soft and calm" } },
+  {
+    id: "sage",
+    name: "Sage",
+    desc: { es: "Serena y profesional", en: "Composed and professional" },
+  },
 ] as const;
 export type VoiceId = (typeof voices)[number]["id"];
 export const voiceIds = voices.map((v) => v.id) as [VoiceId, ...VoiceId[]];
@@ -70,6 +74,12 @@ export const presets = [
     desc: "Procesos, clientes, ventas y herramientas de un negocio.",
     context: "¿Qué tipo de negocio?",
     placeholder: "Tienda de ropa",
+    en: {
+      label: "How a business works",
+      desc: "Processes, customers, sales and tools of a business.",
+      context: "What kind of business?",
+      placeholder: "Clothing store",
+    },
   },
   {
     id: "descubrimiento",
@@ -77,6 +87,12 @@ export const presets = [
     desc: "Problemas reales, hábitos y lo que ya intentaron.",
     context: "¿Qué problema o mercado?",
     placeholder: "Agendamiento en clínicas dentales",
+    en: {
+      label: "Customer discovery",
+      desc: "Real problems, habits and what they've already tried.",
+      context: "Which problem or market?",
+      placeholder: "Scheduling at dental clinics",
+    },
   },
   {
     id: "producto",
@@ -84,6 +100,12 @@ export const presets = [
     desc: "Si una idea resuelve un dolor y cuánto pagarían.",
     context: "¿Qué producto o idea?",
     placeholder: "App de recordatorios por WhatsApp",
+    en: {
+      label: "Validate a product",
+      desc: "Whether an idea solves a real pain and what they'd pay.",
+      context: "Which product or idea?",
+      placeholder: "WhatsApp reminders app",
+    },
   },
   {
     id: "digital",
@@ -91,6 +113,12 @@ export const presets = [
     desc: "Sitio web, inventario y preparación para vender online.",
     context: "¿Qué negocio?",
     placeholder: "Ferretería de barrio",
+    en: {
+      label: "Digital maturity",
+      desc: "Website, inventory and readiness to sell online.",
+      context: "Which business?",
+      placeholder: "Neighborhood hardware store",
+    },
   },
   {
     id: "satisfaccion",
@@ -98,16 +126,24 @@ export const presets = [
     desc: "Experiencia, lo que valoran y qué mejorar.",
     context: "¿Qué producto o servicio?",
     placeholder: "Servicio de soporte técnico",
+    en: {
+      label: "Customer satisfaction",
+      desc: "Experience, what they value and what to improve.",
+      context: "Which product or service?",
+      placeholder: "Tech support service",
+    },
   },
 ] as const;
 export type PresetId = (typeof presets)[number]["id"];
 
-/** Required before "Crear Emily". */
-export function missingFields(d: Draft) {
-  const missing: string[] = [];
-  if (!d.project.trim()) missing.push("el proyecto");
-  if (d.objective.trim().length < 10) missing.push("el objetivo");
-  if (!d.questions.some((q) => q.text.trim())) missing.push("las preguntas");
+export type MissingField = "project" | "objective" | "questions";
+
+/** Required before "Crear Emily" (keys; the UI words them in its language). */
+export function missingFields(d: Draft): MissingField[] {
+  const missing: MissingField[] = [];
+  if (!d.project.trim()) missing.push("project");
+  if (d.objective.trim().length < 10) missing.push("objective");
+  if (!d.questions.some((q) => q.text.trim())) missing.push("questions");
   return missing;
 }
 

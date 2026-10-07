@@ -14,6 +14,10 @@ export type SavedResult = {
   at: string;
   summary: InterviewSummary;
   turns: number;
+  /** Language of the interview (older results: taken from their Emily). */
+  locale: Draft["locale"];
+  /** The summary translated to the other UI language, cached so it's translated once. */
+  translations?: Partial<Record<Draft["locale"], InterviewSummary>>;
 };
 
 const LIST = "emily:list"; // slugs, newest first
@@ -76,9 +80,24 @@ export function saveResult(
   project: string,
   summary: InterviewSummary,
   turns: number,
+  locale: Draft["locale"],
 ) {
-  const r: SavedResult = { slug, project, at: new Date().toISOString(), summary, turns };
+  const r: SavedResult = { slug, project, at: new Date().toISOString(), summary, turns, locale };
   write(resKey(slug), [r, ...read<SavedResult[]>(resKey(slug), [])].slice(0, 50));
+}
+
+export function saveResultTranslation(
+  slug: string,
+  at: string,
+  lang: Draft["locale"],
+  summary: InterviewSummary,
+) {
+  write(
+    resKey(slug),
+    read<SavedResult[]>(resKey(slug), []).map((r) =>
+      r.at === at ? { ...r, translations: { ...r.translations, [lang]: summary } } : r,
+    ),
+  );
 }
 
 function subscribe(onChange: () => void) {
@@ -115,7 +134,12 @@ export function useSavedEmilys() {
       })
       .filter((e): e is SavedEmily => !!e);
     const results = emilys
-      .flatMap((e) => read<SavedResult[]>(resKey(e.slug), []))
+      .flatMap((e) =>
+        read<SavedResult[]>(resKey(e.slug), []).map((r) => ({
+          ...r,
+          locale: r.locale ?? e.draft.locale,
+        })),
+      )
       .sort((a, b) => b.at.localeCompare(a.at));
     return { ready: true, emilys, results };
   }, [version]);

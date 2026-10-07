@@ -12,7 +12,7 @@ Object.assign(globalThis, {
   window: { dispatchEvent: () => true },
 });
 
-const { deleteEmily, loadEmily, saveEmily, saveResult, uniqueSlug } =
+const { deleteEmily, loadEmily, saveEmily, saveResult, saveResultTranslation, uniqueSlug } =
   await import("@/features/landing/store");
 
 const draft = { project: "Boutique Luna", questions: [] } as unknown as Draft;
@@ -40,9 +40,19 @@ describe("landing store", () => {
     expect(JSON.parse(mem.get("emily:list")!)).toEqual(["boutique-luna-2", "boutique-luna"]);
   });
 
+  it("saves the interview language and caches a translated summary once", () => {
+    saveResult("t", "T", summary, 2, "es");
+    const [r] = JSON.parse(mem.get("emily:results:t")!);
+    expect(r.locale).toBe("es");
+    saveResultTranslation("t", r.at, "en", { ...summary, summary: "translated" });
+    const [after] = JSON.parse(mem.get("emily:results:t")!);
+    expect(after.summary.summary).toBe("ok"); // original untouched
+    expect(after.translations.en.summary).toBe("translated");
+  });
+
   it("deletes the Emily and its results", () => {
     saveEmily("x", draft);
-    saveResult("x", "X", summary, 4);
+    saveResult("x", "X", summary, 4, "es");
     expect(mem.has("emily:results:x")).toBe(true);
     deleteEmily("x");
     expect(loadEmily("x")).toBeNull();

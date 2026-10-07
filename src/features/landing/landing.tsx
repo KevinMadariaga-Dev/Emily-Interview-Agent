@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DOMAIN } from "@/features/demo/mock";
-import { aiStatus, fillFromSpeech, generateFromPreset, refineQuestions } from "./ai";
+import {
+  aiStatus,
+  fillFromSpeech,
+  generateFromPreset,
+  refineQuestions,
+  translateDraft,
+} from "./ai";
 import {
   missingFields,
   presets,
@@ -15,6 +21,7 @@ import {
   type QuestionKind,
   type VoiceId,
 } from "./config";
+import { dict, LangProvider, useLang, type Lang } from "./i18n";
 import { InterviewLive } from "./interview-live";
 import {
   ArrowDown,
@@ -62,26 +69,13 @@ type Created = {
 
 const EXIT_MS = 200;
 
-const proofs = [
-  {
-    Icon: LinkIcon,
-    title: "Un link y listo",
-    body: "Tu cliente abre el enlace y habla. Sin apps ni registro.",
-  },
-  {
-    Icon: MicIcon,
-    title: "Conversación real",
-    body: "Emily repregunta, se adapta y no pierde el objetivo.",
-  },
-  {
-    Icon: InboxIcon,
-    title: "Resumen accionable",
-    body: "Hallazgos, dolores y citas en tu correo y en Notion.",
-  },
-];
+// Hero proof points: icons here, words in i18n (proofs[i]).
+const proofs = [{ Icon: LinkIcon }, { Icon: MicIcon }, { Icon: InboxIcon }];
 
 /** Home. Closed: violet field with Emily + pitch. Open: field pinned left, setup on the right. */
 export function Landing() {
+  const [lang, setLang] = useState<Lang>("es");
+  const t = dict[lang];
   const [open, setOpen] = useState(false);
   const [created, setCreated] = useState<Created | null>(null);
   const [heroMode, setHeroMode] = useState<OrbMode>("speaking");
@@ -143,228 +137,232 @@ export function Landing() {
   const toTop = () => rightRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const caption = !wide
-    ? "Emily · entrevistadora con IA"
+    ? t.tagline
     : section === "emilys"
-      ? "Estas son las Emilys que has creado. Pruébame con cualquiera."
+      ? t.captionEmilys
       : section === "resultados"
-        ? "Aquí está lo que descubrí en cada entrevista."
+        ? t.captionResults
         : created
-          ? "Listo. Comparte el link y yo me encargo de la conversación."
+          ? t.captionCreated
           : voiceMode
-            ? "Háblame con naturalidad. Voy llenando los campos por ti."
-            : "Cuéntame con quién hablo y qué necesitas saber.";
+            ? t.captionVoice
+            : t.captionForm;
 
   return (
-    <div className="relative min-h-dvh md:[--panel:18rem] xl:[--panel:22rem]">
-      {/* Violet field: Emily lives here. Fixed half-screen layer; "narrowing" is a clip-path, so
+    <LangProvider value={{ lang, setLang }}>
+      <div lang={lang} className="relative min-h-dvh md:[--panel:18rem] xl:[--panel:22rem]">
+        {/* Violet field: Emily lives here. Fixed half-screen layer; "narrowing" is a clip-path, so
           nothing reflows while it moves. Emily's group slides with a transform to stay centered. */}
-      <aside
-        className={`bg-accent-deep relative flex flex-col overflow-hidden px-8 py-8 text-white motion-reduce:transition-none md:fixed md:inset-y-0 md:left-0 md:z-10 md:w-1/2 md:transition-[clip-path] md:duration-500 md:ease-in-out ${
-          panel
-            ? "md:[clip-path:inset(0_calc(100%_-_var(--panel))_0_0)]"
-            : "md:delay-100 md:[clip-path:inset(0)]"
-        }`}
-      >
-        <p className="text-sm font-semibold tracking-[0.3em] uppercase">
-          NEO<span className="text-violet-300">era</span>
-        </p>
-        <div
-          className={`flex flex-1 flex-col items-center justify-center gap-6 py-8 motion-reduce:transition-none md:transition-[translate] md:duration-500 md:ease-in-out ${
-            panel ? "md:translate-x-[calc((var(--panel)_-_50vw)/2)]" : "md:delay-100"
+        <aside
+          className={`bg-accent-deep relative flex flex-col overflow-hidden px-8 py-8 text-white motion-reduce:transition-none md:fixed md:inset-y-0 md:left-0 md:z-10 md:w-1/2 md:transition-[clip-path] md:duration-500 md:ease-in-out ${
+            panel
+              ? "md:[clip-path:inset(0_calc(100%_-_var(--panel))_0_0)]"
+              : "md:delay-100 md:[clip-path:inset(0)]"
           }`}
         >
-          <VoiceOrb compact={panel} mode={mode} />
-          <span
-            aria-hidden
-            className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 py-1.5 text-xs font-medium tracking-wide text-violet-100 backdrop-blur"
+          <p className="text-sm font-semibold tracking-[0.3em] uppercase">
+            NEO<span className="text-violet-300">era</span>
+          </p>
+          <div
+            className={`flex flex-1 flex-col items-center justify-center gap-6 py-8 motion-reduce:transition-none md:transition-[translate] md:duration-500 md:ease-in-out ${
+              panel ? "md:translate-x-[calc((var(--panel)_-_50vw)/2)]" : "md:delay-100"
+            }`}
           >
-            <span className="relative flex h-2 w-2">
-              <span
-                className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${
-                  mode === "speaking" ? "bg-fuchsia-300" : "bg-emerald-300"
-                }`}
-              />
-              <span
-                className={`relative inline-flex h-2 w-2 rounded-full ${
-                  mode === "speaking" ? "bg-fuchsia-300" : "bg-emerald-300"
-                }`}
-              />
-            </span>
-            <span key={mode} className="animate-rise">
-              {mode === "speaking" ? "Emily está hablando" : "Emily te escucha"}
-            </span>
-          </span>
-          {feed.length ? (
-            <BubbleTrail feed={feed} />
-          ) : (
-            <p
-              key={caption}
-              className="animate-rise max-w-[16rem] text-center text-sm text-balance text-violet-200"
+            <VoiceOrb compact={panel} mode={mode} />
+            <span
+              aria-hidden
+              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 py-1.5 text-xs font-medium tracking-wide text-violet-100 backdrop-blur"
             >
-              {caption}
-            </p>
-          )}
-        </div>
-      </aside>
-
-      {/* Content */}
-      <section
-        ref={rightRef}
-        className={`flex min-h-dvh min-w-0 flex-col px-6 py-6 md:px-10 xl:px-14 ${
-          wide ? "md:ml-[var(--panel)]" : "md:ml-[50%]"
-        }`}
-      >
-        <nav className="flex flex-wrap items-center justify-between gap-3 text-sm">
-          <span className="font-semibold">Emily</span>
-          {wide && (
-            <div
-              role="tablist"
-              aria-label="Secciones"
-              className="bg-accent-soft/60 inline-flex rounded-full p-1"
-            >
-              {(
-                [
-                  ["crear", "Crear Emily", 0],
-                  ["emilys", "Mis Emilys", saved.emilys.length],
-                  ["resultados", "Resultados", saved.results.length],
-                ] as const
-              ).map(([id, label, count]) => (
-                <button
-                  key={id}
-                  role="tab"
-                  aria-selected={section === id}
-                  onClick={() => go(id)}
-                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2 transition-[background-color,color] duration-200 ease-out ${
-                    section === id
-                      ? "bg-card text-accent font-medium shadow-sm"
-                      : "text-muted hover:text-foreground"
+              <span className="relative flex h-2 w-2">
+                <span
+                  className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${
+                    mode === "speaking" ? "bg-fuchsia-300" : "bg-emerald-300"
                   }`}
-                >
-                  {label}
-                  {count > 0 && (
-                    <span
-                      className={`rounded-full px-1.5 text-xs tabular-nums ${
-                        section === id ? "bg-accent text-accent-foreground" : "bg-border"
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-        </nav>
+                />
+                <span
+                  className={`relative inline-flex h-2 w-2 rounded-full ${
+                    mode === "speaking" ? "bg-fuchsia-300" : "bg-emerald-300"
+                  }`}
+                />
+              </span>
+              <span key={mode} className="animate-rise">
+                {mode === "speaking" ? t.speaking : t.listening}
+              </span>
+            </span>
+            {feed.length ? (
+              <BubbleTrail feed={feed} />
+            ) : (
+              <p
+                key={caption}
+                className="animate-rise max-w-[16rem] text-center text-sm text-balance text-violet-200"
+              >
+                {caption}
+              </p>
+            )}
+          </div>
+        </aside>
 
-        <div
-          key={wide ? section : "hero"}
-          className={`flex flex-1 flex-col transition-[opacity,translate] duration-200 ease-out ${
-            exiting
-              ? "-translate-y-1.5 opacity-0 motion-reduce:translate-y-0"
-              : wide
-                ? fromHero
-                  ? "animate-slide-in [animation-delay:280ms]"
-                  : "animate-rise"
-                : ""
+        {/* Content */}
+        <section
+          ref={rightRef}
+          className={`flex min-h-dvh min-w-0 flex-col px-6 py-6 md:px-10 xl:px-14 ${
+            wide ? "md:ml-[var(--panel)]" : "md:ml-[50%]"
           }`}
         >
-          {section === "emilys" ? (
-            <EmilyList
-              emilys={saved.emilys}
-              results={saved.results}
-              onMode={setVoiceMode}
-              onFeed={setFeed}
-              onCreate={() => go("crear")}
-            />
-          ) : section === "resultados" ? (
-            <ResultsList results={saved.results} onCreate={() => go("emilys")} />
-          ) : !open ? (
-            <div className="my-auto max-w-xl space-y-10 py-16">
-              <div className="space-y-6">
-                <h1 className="animate-rise text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance md:text-6xl lg:text-7xl">
-                  Hola, soy Emily.
-                </h1>
-                <p
-                  className="animate-rise text-muted max-w-[52ch] text-lg leading-relaxed"
-                  style={{ animationDelay: "60ms" }}
-                >
-                  Entrevisto a tus clientes por voz, en español o inglés, a través de un simple
-                  link. Me mantengo en tu objetivo y te entrego lo que descubrí.
-                </p>
-              </div>
-
-              <ul className="space-y-5">
-                {proofs.map(({ Icon, title, body }, i) => (
-                  <li
-                    key={title}
-                    className="animate-rise flex gap-4"
-                    style={{ animationDelay: `${180 + i * 60}ms` }}
-                  >
-                    <span className="bg-accent-soft text-accent grid h-10 w-10 shrink-0 place-items-center rounded-full">
-                      <Icon />
-                    </span>
-                    <span>
-                      <span className="block font-medium">{title}</span>
-                      <span className="text-muted text-sm">{body}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-
+          <nav className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span className="font-semibold">Emily</span>
+            {wide && (
               <div
-                className="animate-rise flex flex-wrap items-center gap-4"
-                style={{ animationDelay: "420ms" }}
+                role="tablist"
+                aria-label={t.sections}
+                className="bg-accent-soft/60 inline-flex rounded-full p-1"
               >
-                <button className={`${primary} px-8 py-4 text-base`} onClick={openConfig}>
-                  Configura Emily <ArrowRight className="h-5 w-5" />
-                </button>
-                <Link
-                  href="/demo/entrevista"
-                  target="_blank"
-                  className="text-accent text-sm font-medium hover:underline"
-                >
-                  Escucha una entrevista de ejemplo
-                </Link>
+                {(
+                  [
+                    ["crear", t.tabs.crear, 0],
+                    ["emilys", t.tabs.emilys, saved.emilys.length],
+                    ["resultados", t.tabs.resultados, saved.results.length],
+                  ] as const
+                ).map(([id, label, count]) => (
+                  <button
+                    key={id}
+                    role="tab"
+                    aria-selected={section === id}
+                    onClick={() => go(id)}
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 transition-[background-color,color] duration-200 ease-out ${
+                      section === id
+                        ? "bg-card text-accent font-medium shadow-sm"
+                        : "text-muted hover:text-foreground"
+                    }`}
+                  >
+                    {label}
+                    {count > 0 && (
+                      <span
+                        className={`rounded-full px-1.5 text-xs tabular-nums ${
+                          section === id ? "bg-accent text-accent-foreground" : "bg-border"
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
-            </div>
-          ) : (
-            <div className="w-full py-8">
-              {created ? (
-                <Result
-                  c={created}
-                  onMode={setVoiceMode}
-                  onFeed={setFeed}
-                  onDone={() =>
-                    swap(true, () => {
+            )}
+          </nav>
+
+          <div
+            key={wide ? section : "hero"}
+            className={`flex flex-1 flex-col transition-[opacity,translate] duration-200 ease-out ${
+              exiting
+                ? "-translate-y-1.5 opacity-0 motion-reduce:translate-y-0"
+                : wide
+                  ? fromHero
+                    ? "animate-slide-in [animation-delay:280ms]"
+                    : "animate-rise"
+                  : ""
+            }`}
+          >
+            {section === "emilys" ? (
+              <EmilyList
+                emilys={saved.emilys}
+                results={saved.results}
+                onMode={setVoiceMode}
+                onFeed={setFeed}
+                onCreate={() => go("crear")}
+              />
+            ) : section === "resultados" ? (
+              <ResultsList results={saved.results} onCreate={() => go("emilys")} />
+            ) : !open ? (
+              <div className="my-auto max-w-xl space-y-10 py-16">
+                <div className="space-y-6">
+                  <h1 className="animate-rise text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance md:text-6xl lg:text-7xl">
+                    {t.heroTitle}
+                  </h1>
+                  <p
+                    className="animate-rise text-muted max-w-[52ch] text-lg leading-relaxed"
+                    style={{ animationDelay: "60ms" }}
+                  >
+                    {t.heroBody}
+                  </p>
+                </div>
+
+                <ul className="space-y-5">
+                  {proofs.map(({ Icon }, i) => {
+                    const [title, body] = t.proofs[i]!;
+                    return (
+                      <li
+                        key={title}
+                        className="animate-rise flex gap-4"
+                        style={{ animationDelay: `${180 + i * 60}ms` }}
+                      >
+                        <span className="bg-accent-soft text-accent grid h-10 w-10 shrink-0 place-items-center rounded-full">
+                          <Icon />
+                        </span>
+                        <span>
+                          <span className="block font-medium">{title}</span>
+                          <span className="text-muted text-sm">{body}</span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <div
+                  className="animate-rise flex flex-wrap items-center gap-4"
+                  style={{ animationDelay: "420ms" }}
+                >
+                  <button className={`${primary} px-8 py-4 text-base`} onClick={openConfig}>
+                    {t.configure} <ArrowRight className="h-5 w-5" />
+                  </button>
+                  <Link
+                    href="/demo/entrevista"
+                    target="_blank"
+                    className="text-accent text-sm font-medium hover:underline"
+                  >
+                    {t.exampleInterview}
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full py-8">
+                {created ? (
+                  <Result
+                    c={created}
+                    onMode={setVoiceMode}
+                    onFeed={setFeed}
+                    onDone={() =>
+                      swap(true, () => {
+                        setVoiceMode(null);
+                        setFeed([]);
+                        setCreated(null); // next "Crear Emily" starts a fresh form
+                        setSection("emilys");
+                      })
+                    }
+                  />
+                ) : (
+                  <ConfigureForm
+                    onVoiceMode={setVoiceMode}
+                    onFeed={setFeed}
+                    onCreate={(c) => {
                       setVoiceMode(null);
                       setFeed([]);
-                      setCreated(null); // next "Crear Emily" starts a fresh form
-                      setSection("emilys");
-                    })
-                  }
-                />
-              ) : (
-                <ConfigureForm
-                  onVoiceMode={setVoiceMode}
-                  onFeed={setFeed}
-                  onCreate={(c) => {
-                    setVoiceMode(null);
-                    setFeed([]);
-                    setCreated(c);
-                    toTop();
-                  }}
-                  onClose={closeConfig}
-                />
-              )}
-            </div>
-          )}
-        </div>
+                      setCreated(c);
+                      toTop();
+                    }}
+                    onClose={closeConfig}
+                  />
+                )}
+              </div>
+            )}
+          </div>
 
-        <footer className="text-muted mt-auto pt-6 text-xs">
-          © {new Date().getFullYear()} NEOera Systems
-        </footer>
-      </section>
-    </div>
+          <footer className="text-muted mt-auto pt-6 text-xs">
+            © {new Date().getFullYear()} NEOera Systems
+          </footer>
+        </section>
+      </div>
+    </LangProvider>
   );
 }
 
@@ -383,13 +381,14 @@ function ConfigureForm({
   onVoiceMode: (m: OrbMode | null) => void;
   onFeed: (m: Msg[]) => void;
 }) {
+  const { lang, setLang, t } = useLang();
   const [d, setD] = useState<Omit<Draft, "questions">>({
     recipientName: "",
     company: "",
     project: "",
     objective: "",
     areas: [],
-    locale: "es",
+    locale: lang,
     status: "active",
     expires: "",
     noExpiry: false,
@@ -403,6 +402,8 @@ function ConfigureForm({
   const [assist, setAssist] = useState<Assist>(null);
   const [status, setStatus] = useState({ voice: false, llm: false });
   const [flash, setFlash] = useState(0); // bumps when AI fills fields → brief highlight
+  const [langNote, setLangNote] = useState("");
+  const [translating, setTranslating] = useState(false);
   const nextId = useRef(1);
 
   useEffect(() => {
@@ -430,11 +431,39 @@ function ConfigureForm({
     try {
       const r = await refineQuestions(draft);
       if (r.questions?.length) applyPatch({ questions: r.questions });
-      setRefineNote(auto ? `Emily propuso preguntas a partir del objetivo. ${r.note}` : r.note);
+      setRefineNote(auto ? `${t.proposed} ${r.note}` : r.note);
     } catch (err) {
-      if (!auto) setRefineNote(err instanceof Error ? err.message : "No pude generar preguntas.");
+      if (!auto) setRefineNote(err instanceof Error ? err.message : t.noQs);
     } finally {
       setRefining(false);
+    }
+  }
+
+  /**
+   * The ES/EN switch: UI language, the language Emily will speak, and — when there is content —
+   * an AI translation of project, goal, questions and areas into the new language.
+   */
+  async function changeLang(next: Lang) {
+    if (next === lang || translating) return;
+    const nt = dict[next];
+    setLang(next);
+    set("locale", next);
+    setLangNote("");
+    const hasContent = draft.objective.trim() || draft.questions.length || draft.areas.length;
+    if (!hasContent) return;
+    setTranslating(true);
+    setLangNote(nt.translating);
+    try {
+      const tr = await translateDraft(draft, next);
+      if (!tr) return setLangNote(nt.cantTranslate);
+      setD((x) => ({ ...x, project: tr.project, objective: tr.objective, areas: tr.areas }));
+      setQuestions(tr.questions.map((q) => ({ id: nextId.current++, ...q })));
+      setFlash((n) => n + 1);
+      setLangNote(nt.translated);
+    } catch {
+      setLangNote(nt.cantTranslate);
+    } finally {
+      setTranslating(false);
     }
   }
 
@@ -456,20 +485,18 @@ function ConfigureForm({
     e.preventDefault();
     if (missingFields(draft).length) return;
     const fmt =
-      d.expires && new Date(`${d.expires}T23:59`).toLocaleDateString("es", { dateStyle: "long" });
+      d.expires && new Date(`${d.expires}T23:59`).toLocaleDateString(lang, { dateStyle: "long" });
     const slug = uniqueSlug(toSlug(d.project) || "entrevista");
     saveEmily(slug, draft);
     onCreate({
       slug,
       url: `${DOMAIN}/${slug}`,
       project: d.project,
-      recipient: [d.recipientName, d.company].filter(Boolean).join(" · ") || "Link abierto",
+      recipient: [d.recipientName, d.company].filter(Boolean).join(" · ") || t.openLink,
       questions: filled.length,
       areas: d.areas.length,
       locale: d.locale,
-      status: `${d.status === "active" ? "Activo" : "Pausado"} · ${
-        d.noExpiry || !fmt ? "sin caducidad" : `caduca el ${fmt}`
-      }`,
+      status: t.statusLine(d.status === "active", d.noExpiry || !fmt ? "" : fmt),
       draft,
     });
   }
@@ -497,22 +524,42 @@ function ConfigureForm({
     <form onSubmit={submit} className="space-y-8">
       <header className="flex items-start justify-between gap-4">
         <div className="space-y-2">
-          <h2 className="text-3xl font-semibold tracking-[-0.03em] md:text-4xl">Configura Emily</h2>
+          <h2 className="text-3xl font-semibold tracking-[-0.03em] md:text-4xl">{t.configure}</h2>
           <p className="text-muted">
-            Llénalo tú, díctaselo a Emily o parte de una plantilla.{" "}
-            <span className="text-xs">
-              {status.llm ? "· IA conectada" : "· Modo demo: IA local, sin clave de OpenAI"}
-            </span>
+            {t.formSubtitle} <span className="text-xs">{status.llm ? t.aiOn : t.aiOff}</span>
           </p>
+          {langNote && (
+            <p
+              role="status"
+              className="text-accent flex items-center gap-2 text-sm transition-opacity duration-200 starting:opacity-0"
+            >
+              {translating && (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              )}
+              {langNote}
+            </p>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Cerrar configuración"
-          className="text-muted hover:bg-accent-soft hover:text-accent grid h-10 w-10 place-items-center rounded-full transition"
-        >
-          <XIcon />
-        </button>
+        <div className="flex items-center gap-2">
+          <Segmented
+            label={t.language}
+            value={lang}
+            onChange={(v) => void changeLang(v)}
+            options={[
+              ["es", "ES"],
+              ["en", "EN"],
+            ]}
+            compact
+          />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t.close}
+            className="text-muted hover:bg-accent-soft hover:text-accent grid h-10 w-10 place-items-center rounded-full transition"
+          >
+            <XIcon />
+          </button>
+        </div>
       </header>
 
       {/* Two assisted ways in */}
@@ -521,15 +568,15 @@ function ConfigureForm({
           active={false}
           onClick={() => setAssist("voice")}
           Icon={MicIcon}
-          title="Configurar por voz"
-          body="Cuéntale a Emily qué necesitas y ella llena todos los campos."
+          title={t.byVoice}
+          body={t.byVoiceBody}
         />
         <AssistCard
           active={assist === "preset"}
           onClick={() => setAssist(assist === "preset" ? null : "preset")}
           Icon={SparkIcon}
-          title="Usar una plantilla"
-          body="Elige un tipo de entrevista y la IA genera las preguntas para tu caso."
+          title={t.template}
+          body={t.templateBody}
         />
       </div>
 
@@ -545,20 +592,20 @@ function ConfigureForm({
 
       <div key={flash} className="grid gap-x-12 gap-y-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="space-y-7">
-          <Field label="Destinatario" hint="Quién recibirá a Emily. Vacío = link abierto.">
+          <Field label={t.recipient} hint={t.recipientHint}>
             <div className="grid gap-3 sm:grid-cols-2">
               <input
                 className={`${field} ${hl}`}
-                placeholder="Nombre"
-                aria-label="Nombre del destinatario"
+                placeholder={t.name}
+                aria-label={t.recipientName}
                 autoComplete="off"
                 value={d.recipientName}
                 onChange={(e) => set("recipientName", e.target.value)}
               />
               <input
                 className={`${field} ${hl}`}
-                placeholder="Empresa"
-                aria-label="Empresa del destinatario"
+                placeholder={t.company}
+                aria-label={t.recipientCompany}
                 autoComplete="off"
                 value={d.company}
                 onChange={(e) => set("company", e.target.value)}
@@ -566,32 +613,28 @@ function ConfigureForm({
             </div>
           </Field>
 
-          <Field label="Proyecto u oportunidad" htmlFor="project">
+          <Field label={t.project} htmlFor="project">
             <input
               id="project"
               className={`${field} ${hl}`}
               required
-              placeholder="Tienda online para Boutique Luna"
+              placeholder={t.projectPh}
               value={d.project}
               onChange={(e) => set("project", e.target.value)}
             />
             <p className="text-muted mt-2 font-mono text-xs">
-              {DOMAIN}/<span className="text-accent">{toSlug(d.project) || "tu-proyecto"}</span>
+              {DOMAIN}/<span className="text-accent">{toSlug(d.project) || t.projectSlug}</span>
             </p>
           </Field>
 
-          <Field
-            label="Objetivo de la entrevista"
-            htmlFor="objective"
-            hint="Emily lo usa para no perder el foco."
-          >
+          <Field label={t.objective} htmlFor="objective" hint={t.objectiveHint}>
             <textarea
               id="objective"
               className={`${field} resize-y leading-relaxed ${hl}`}
               required
               minLength={10}
               rows={3}
-              placeholder="Entender si están listos para vender por internet y qué les frena."
+              placeholder={t.objectivePh}
               value={d.objective}
               onChange={(e) => set("objective", e.target.value)}
               onBlur={() => {
@@ -601,52 +644,35 @@ function ConfigureForm({
             />
           </Field>
 
-          <div className="grid gap-7 sm:grid-cols-2">
-            <Field label="Idioma preferido">
-              <Segmented
-                label="Idioma preferido"
-                value={d.locale}
-                onChange={(v) => set("locale", v)}
-                options={[
-                  ["es", "Español"],
-                  ["en", "English"],
-                ]}
-              />
-            </Field>
-            <Field label="Estado del enlace">
-              <Segmented
-                label="Estado del enlace"
-                value={d.status}
-                onChange={(v) => set("status", v)}
-                options={[
-                  ["active", "Activo"],
-                  ["paused", "Pausado"],
-                ]}
-              />
-            </Field>
-          </div>
+          <Field label={t.linkStatus}>
+            <Segmented
+              label={t.linkStatus}
+              value={d.status}
+              onChange={(v) => set("status", v)}
+              options={[
+                ["active", t.active],
+                ["paused", t.paused],
+              ]}
+            />
+          </Field>
 
-          <Field label="Voz de Emily" hint="Toca ▶ para escucharla.">
+          <Field label={t.voice} hint={t.voiceHint}>
             <VoicePicker value={d.voice} locale={d.locale} onChange={(v) => set("voice", v)} />
           </Field>
 
-          <Field
-            label="Enviar resultados a"
-            htmlFor="reportEmail"
-            hint="Al terminar cada entrevista, Emily envía aquí el resumen ordenado por correo."
-          >
+          <Field label={t.reportTo} htmlFor="reportEmail" hint={t.reportHint}>
             <input
               id="reportEmail"
               type="email"
               autoComplete="email"
               className={`${field} ${hl}`}
-              placeholder="tu-correo@empresa.com"
+              placeholder={t.reportPh}
               value={d.reportEmail}
               onChange={(e) => set("reportEmail", e.target.value.trim())}
             />
           </Field>
 
-          <Field label="Caducidad" htmlFor="expires">
+          <Field label={t.expiry} htmlFor="expires">
             <div className="flex flex-wrap items-center gap-4">
               <input
                 id="expires"
@@ -664,35 +690,28 @@ function ConfigureForm({
                   checked={d.noExpiry}
                   onChange={(e) => set("noExpiry", e.target.checked)}
                 />
-                Sin caducidad
+                {t.noExpiry}
               </label>
             </div>
           </Field>
         </div>
 
         <div className="space-y-7">
-          <Field
-            label="Preguntas o información obligatoria"
-            hint="Emily se asegura de cubrir cada una. Toca Abierta/Cerrada para cambiar el tipo."
-          >
+          <Field label={t.questions} hint={t.questionsHint}>
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 className={quiet}
                 disabled={refining || d.objective.trim().length < 10}
                 onClick={() => void refine()}
-                title={d.objective.trim().length < 10 ? "Primero escribe el objetivo" : undefined}
+                title={d.objective.trim().length < 10 ? t.objectiveFirst : undefined}
               >
                 {refining ? (
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                 ) : (
                   <SparkIcon className="h-4 w-4" />
                 )}
-                {refining
-                  ? "Pensando preguntas…"
-                  : filled.length
-                    ? "Mejorar preguntas con IA"
-                    : "Formular preguntas con IA"}
+                {refining ? t.thinkingQs : filled.length ? t.improveQs : t.writeQs}
               </button>
               {refineNote && (
                 <p className="text-muted text-sm transition-opacity duration-200 starting:opacity-0">
@@ -704,17 +723,25 @@ function ConfigureForm({
               {questions.map((q, i) => (
                 <li
                   key={q.id}
-                  className="group flex items-center gap-2 transition-[opacity,translate] duration-200 ease-out starting:-translate-y-1 starting:opacity-0"
+                  className="group flex items-start gap-2 transition-[opacity,translate] duration-200 ease-out starting:-translate-y-1 starting:opacity-0"
                 >
-                  <span className="text-muted w-5 text-right text-sm tabular-nums">{i + 1}</span>
-                  <input
-                    className={`${field} ${hl}`}
-                    placeholder="¿Tienen sitio web?"
-                    aria-label={`Pregunta ${i + 1}`}
+                  <span className="text-muted w-5 pt-2.5 text-right text-sm tabular-nums">
+                    {i + 1}
+                  </span>
+                  {/* Grows with the text so long questions are read whole (field-sizing where
+                      supported; rows estimate elsewhere). Enter doesn't add line breaks. */}
+                  <textarea
+                    rows={Math.max(1, Math.ceil(q.text.length / 52))}
+                    className={`${field} field-sizing-content min-h-[2.75rem] resize-none leading-snug ${hl}`}
+                    placeholder={t.questionPh}
+                    aria-label={t.question(i + 1)}
                     value={q.text}
+                    onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
                     onChange={(e) =>
                       setQuestions((qs) =>
-                        qs.map((x) => (x.id === q.id ? { ...x, text: e.target.value } : x)),
+                        qs.map((x) =>
+                          x.id === q.id ? { ...x, text: e.target.value.replace(/\n/g, " ") } : x,
+                        ),
                       )
                     }
                   />
@@ -729,32 +756,28 @@ function ConfigureForm({
                         ),
                       )
                     }
-                    aria-label={`Pregunta ${i + 1}: ${q.kind}. Cambiar tipo`}
-                    className={`w-20 shrink-0 rounded-full px-2 py-1 text-xs font-medium transition-colors ${
+                    aria-label={t.changeKind(i + 1, q.kind === "abierta" ? t.open : t.closed)}
+                    className={`mt-2 w-20 shrink-0 rounded-full px-2 py-1 text-xs font-medium transition-colors ${
                       q.kind === "abierta"
                         ? "bg-accent-soft text-accent"
                         : "bg-sky-500/15 text-sky-700 dark:text-sky-300"
                     }`}
                   >
-                    {q.kind === "abierta" ? "Abierta" : "Cerrada"}
+                    {q.kind === "abierta" ? t.open : t.closed}
                   </button>
-                  <span className="flex shrink-0 opacity-60 transition group-focus-within:opacity-100 group-hover:opacity-100">
-                    <IconBtn
-                      label={`Subir pregunta ${i + 1}`}
-                      onClick={() => move(i, -1)}
-                      disabled={i === 0}
-                    >
+                  <span className="mt-0.5 flex shrink-0 opacity-60 transition group-focus-within:opacity-100 group-hover:opacity-100">
+                    <IconBtn label={t.up(i + 1)} onClick={() => move(i, -1)} disabled={i === 0}>
                       <ArrowUp className="h-4 w-4" />
                     </IconBtn>
                     <IconBtn
-                      label={`Bajar pregunta ${i + 1}`}
+                      label={t.down(i + 1)}
                       onClick={() => move(i, 1)}
                       disabled={i === questions.length - 1}
                     >
                       <ArrowDown className="h-4 w-4" />
                     </IconBtn>
                     <IconBtn
-                      label={`Quitar pregunta ${i + 1}`}
+                      label={t.remove(i + 1)}
                       onClick={() => setQuestions((qs) => qs.filter((x) => x.id !== q.id))}
                     >
                       <XIcon className="h-4 w-4" />
@@ -770,20 +793,16 @@ function ConfigureForm({
               }
               className="text-accent mt-3 inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
             >
-              <PlusIcon className="h-4 w-4" /> Agregar pregunta
+              <PlusIcon className="h-4 w-4" /> {t.addQuestion}
             </button>
           </Field>
 
-          <Field
-            label="Áreas de seguimiento opcionales"
-            htmlFor="area"
-            hint="Temas que Emily explora si surge la oportunidad. Enter para agregar."
-          >
+          <Field label={t.areas} htmlFor="area" hint={t.areasHint}>
             <div className="flex gap-2">
               <input
                 id="area"
                 className={field}
-                placeholder="Presupuesto, competencia, equipo…"
+                placeholder={t.areasPh}
                 value={areaDraft}
                 onChange={(e) => setAreaDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -799,7 +818,7 @@ function ConfigureForm({
                 className={quiet}
                 disabled={!areaDraft.trim()}
               >
-                Agregar
+                {t.add}
               </button>
             </div>
             {d.areas.length > 0 && (
@@ -812,7 +831,7 @@ function ConfigureForm({
                     {a}
                     <button
                       type="button"
-                      aria-label={`Quitar ${a}`}
+                      aria-label={t.removeArea(a)}
                       onClick={() =>
                         set(
                           "areas",
@@ -833,12 +852,16 @@ function ConfigureForm({
 
       <div className="border-border bg-background/85 sticky bottom-0 -mx-2 flex flex-wrap items-center justify-between gap-4 border-t px-2 py-5 backdrop-blur">
         <p className="text-muted text-sm tabular-nums">
-          {filled.length} {filled.length === 1 ? "pregunta" : "preguntas"} · {d.areas.length}{" "}
-          {d.areas.length === 1 ? "área" : "áreas"} · {d.locale === "es" ? "Español" : "English"}
-          {missingFields(draft).length > 0 && ` · falta ${missingFields(draft).join(", ")}`}
+          {t.nQuestions(filled.length)} · {t.nAreas(d.areas.length)} · {t.langName}
+          {missingFields(draft).length > 0 &&
+            t.missing(
+              missingFields(draft)
+                .map((m) => t.missingNames[m])
+                .join(", "),
+            )}
         </p>
         <button className={primary} disabled={missingFields(draft).length > 0}>
-          Crear Emily <ArrowRight className="h-4 w-4" />
+          {t.create} <ArrowRight className="h-4 w-4" />
         </button>
       </div>
     </form>
@@ -882,9 +905,6 @@ function AssistCard({
   );
 }
 
-const GREETING =
-  "Hola, te ayudo a configurarme. Cuéntame con quién voy a hablar, para qué proyecto y qué quieres descubrir.";
-
 /**
  * Voice mode: only the conversation. Emily talks, listens hands-free (stops on silence), and
  * each answer fills the form behind the scenes. "Terminar" returns to the filled fields.
@@ -904,7 +924,8 @@ function VoiceSetup({
   onFeed: (m: Msg[]) => void;
   onFinish: () => void;
 }) {
-  const [msgs, setMsgs] = useState<Msg[]>([{ from: "emily", text: GREETING }]);
+  const { t } = useLang();
+  const [msgs, setMsgs] = useState<Msg[]>([{ from: "emily", text: t.greeting }]);
   const [typed, setTyped] = useState("");
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState("");
@@ -929,7 +950,7 @@ function VoiceSetup({
     if (!started.current) {
       started.current = true;
       voice.unlock();
-      voice.say(GREETING).then(() => void listenTurn());
+      voice.say(t.greeting).then(() => void listenTurn());
     }
     return () => {
       alive.current = false;
@@ -945,7 +966,7 @@ function VoiceSetup({
       if (!alive.current) return;
       if (typing.current) return void (typing.current = false);
       if (!text) {
-        await voice.say("No te escuché bien, ¿me lo repites?");
+        await voice.say(t.didntHear);
         return listenTurn();
       }
       await handle(text);
@@ -963,14 +984,14 @@ function VoiceSetup({
       if (!alive.current) return;
       onPatch(patch);
       const complete = missingFields({ ...draftRef.current, ...patch } as Draft).length === 0;
-      const line = complete ? `${reply} Cuando quieras, pulsa Terminar para revisar.` : reply;
+      const line = complete ? `${reply} ${t.pressFinish}` : reply;
       setMsgs((m) => [...m, { from: "emily", text: line }]);
       setThinking(false);
       await voice.say(line);
       if (!complete) await listenTurn();
     } catch (err) {
       setThinking(false);
-      setError(err instanceof Error ? err.message : "Algo falló, intenta de nuevo.");
+      setError(err instanceof Error ? err.message : t.somethingFailed);
     }
   }
 
@@ -985,35 +1006,34 @@ function VoiceSetup({
 
   const d = draft;
   const captured = [
-    [d.recipientName || d.company ? "Destinatario" : "", !!(d.recipientName || d.company)],
-    ["Proyecto", !!d.project.trim()],
-    ["Objetivo", d.objective.trim().length >= 10],
-    [`${d.questions.length} preguntas`, d.questions.length > 0],
-    [d.areas.length ? `${d.areas.length} áreas` : "", d.areas.length > 0],
-    [d.expires ? "Caducidad" : "", !!d.expires],
-    [d.reportEmail ? "Correo de resultados" : "", !!d.reportEmail],
+    [d.recipientName || d.company ? t.capRecipient : "", !!(d.recipientName || d.company)],
+    [t.capProject, !!d.project.trim()],
+    [t.capObjective, d.objective.trim().length >= 10],
+    [t.nQuestions(d.questions.length), d.questions.length > 0],
+    [d.areas.length ? t.capAreas(d.areas.length) : "", d.areas.length > 0],
+    [d.expires ? t.capExpiry : "", !!d.expires],
+    [d.reportEmail ? t.capReport : "", !!d.reportEmail],
   ].filter(([label]) => label) as [string, boolean][];
 
   const recording = voice.state === "recording";
   const busy = thinking || voice.state === "transcribing";
   const statusLine = recording
-    ? "Te escucho… habla con naturalidad, envío cuando hagas una pausa."
+    ? t.stRecording
     : voice.state === "transcribing"
-      ? "Entendiendo lo que dijiste…"
+      ? t.stTranscribing
       : thinking
-        ? "Llenando los campos…"
+        ? t.stFilling
         : voice.state === "speaking"
-          ? "Emily está hablando…"
+          ? t.stSpeaking
           : "";
 
   return (
-    <section aria-label="Configurar por voz" className="flex min-h-[70dvh] flex-col gap-5">
+    <section aria-label={t.byVoice} className="flex min-h-[70dvh] flex-col gap-5">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h2 className="text-3xl font-semibold tracking-[-0.03em]">Configura Emily por voz</h2>
+          <h2 className="text-3xl font-semibold tracking-[-0.03em]">{t.voiceTitle}</h2>
           <p className="text-muted text-sm">
-            {openai ? "Voz y escucha con OpenAI" : "Voz del navegador (sin clave de OpenAI)"} ·
-            puedes hablar o escribir.
+            {openai ? t.voiceOpenai : t.voiceBrowser} · {t.speakOrType}
           </p>
         </div>
         <button
@@ -1025,12 +1045,12 @@ function VoiceSetup({
             onFinish();
           }}
         >
-          <CheckIcon className="h-4 w-4" /> Terminar
+          <CheckIcon className="h-4 w-4" /> {t.finish}
         </button>
       </header>
 
       {captured.length > 0 && (
-        <ul aria-label="Lo que Emily ya anotó" className="flex flex-wrap gap-2">
+        <ul aria-label={t.captured} className="flex flex-wrap gap-2">
           {captured.map(([label, ok]) => (
             <li
               key={label}
@@ -1096,7 +1116,7 @@ function VoiceSetup({
             type="button"
             onClick={recording ? voice.stop : () => void listenTurn()}
             disabled={busy || voice.state === "speaking"}
-            aria-label={recording ? "Ya terminé de hablar" : "Hablar"}
+            aria-label={recording ? t.stopTalking : t.talk}
             className={`grid h-12 w-12 shrink-0 place-items-center rounded-full text-white shadow-lg transition-[scale,background-color] duration-160 ease-out active:scale-[0.95] disabled:opacity-40 ${
               recording ? "bg-red-500" : "bg-accent"
             }`}
@@ -1105,7 +1125,7 @@ function VoiceSetup({
           </button>
           <input
             className={field}
-            placeholder="…o escribe tu respuesta y pulsa Enter"
+            placeholder={t.typePh}
             value={typed}
             disabled={busy}
             onChange={(e) => setTyped(e.target.value)}
@@ -1116,11 +1136,7 @@ function VoiceSetup({
               }
             }}
           />
-          <IconBtn
-            label="Enviar respuesta escrita"
-            disabled={!typed.trim() || busy}
-            onClick={sendTyped}
-          >
+          <IconBtn label={t.sendTyped} disabled={!typed.trim() || busy} onClick={sendTyped}>
             <SendIcon className="h-4 w-4" />
           </IconBtn>
         </div>
@@ -1131,6 +1147,8 @@ function VoiceSetup({
 
 /** Predefined configurations: pick a type, name the business, the AI writes the rest. */
 function PresetPicker({ locale, onPatch }: { locale: "es" | "en"; onPatch: (p: Patch) => void }) {
+  const { lang, t } = useLang();
+  const words = (p: (typeof presets)[number]) => (lang === "en" ? p.en : p);
   const [chosen, setChosen] = useState<PresetId>("negocio");
   const [context, setContext] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1143,7 +1161,7 @@ function PresetPicker({ locale, onPatch }: { locale: "es" | "en"; onPatch: (p: P
     try {
       onPatch((await generateFromPreset(chosen, context, locale)).patch);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No pude generar la configuración.");
+      setError(err instanceof Error ? err.message : t.presetError);
     } finally {
       setLoading(false);
     }
@@ -1151,12 +1169,12 @@ function PresetPicker({ locale, onPatch }: { locale: "es" | "en"; onPatch: (p: P
 
   return (
     <section
-      aria-label="Plantillas"
+      aria-label={t.templates}
       className="border-accent/30 bg-card animate-reveal space-y-5 rounded-2xl border p-5"
     >
       <div
         role="radiogroup"
-        aria-label="Tipo de entrevista"
+        aria-label={t.interviewType}
         className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-5"
       >
         {presets.map((p) => (
@@ -1172,17 +1190,17 @@ function PresetPicker({ locale, onPatch }: { locale: "es" | "en"; onPatch: (p: P
                 : "border-border hover:border-accent/40"
             }`}
           >
-            <span className="block text-sm font-medium">{p.label}</span>
-            <span className="text-muted mt-0.5 block text-xs">{p.desc}</span>
+            <span className="block text-sm font-medium">{words(p).label}</span>
+            <span className="text-muted mt-0.5 block text-xs">{words(p).desc}</span>
           </button>
         ))}
       </div>
       <div className="flex flex-wrap items-end gap-3">
         <label className="min-w-64 flex-1 space-y-1.5">
-          <span className="text-sm font-medium">{preset.context}</span>
+          <span className="text-sm font-medium">{words(preset).context}</span>
           <input
             className={field}
-            placeholder={preset.placeholder}
+            placeholder={words(preset).placeholder}
             value={context}
             onChange={(e) => setContext(e.target.value)}
             onKeyDown={(e) => {
@@ -1199,7 +1217,7 @@ function PresetPicker({ locale, onPatch }: { locale: "es" | "en"; onPatch: (p: P
           ) : (
             <SparkIcon className="h-4 w-4" />
           )}
-          {loading ? "Generando…" : "Generar con IA"}
+          {loading ? t.generating : t.generate}
         </button>
       </div>
       {error && (
@@ -1223,6 +1241,7 @@ function Result({
   onMode: (m: OrbMode | null) => void;
   onFeed: (m: Msg[]) => void;
 }) {
+  const { lang, t } = useLang();
   const [copied, setCopied] = useState(false);
   const [testing, setTesting] = useState(false);
   const path = `/e/${c.slug}`;
@@ -1244,20 +1263,20 @@ function Result({
 
   const voice = voices.find((v) => v.id === c.draft.voice);
   const facts = [
-    ["Para", c.recipient],
-    ["Preguntas", String(c.questions)],
-    ["Áreas de seguimiento", String(c.areas)],
-    ["Idioma", c.locale === "es" ? "Español" : "English"],
-    ["Voz", voice ? `${voice.name} · ${voice.desc}` : "—"],
-    ["Resultados por correo a", c.draft.reportEmail || "Solo en Resultados"],
-    ["Enlace", c.status],
+    [t.factFor, c.recipient],
+    [t.factQuestions, String(c.questions)],
+    [t.factAreas, String(c.areas)],
+    [t.factLang, dict[c.locale].langName],
+    [t.factVoice, voice ? `${voice.name} · ${voice.desc[lang]}` : "—"],
+    [t.factReport, c.draft.reportEmail || t.onlyResults],
+    [t.factLink, c.status],
   ];
   return (
     <div className="grid gap-12 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <div className="max-w-2xl space-y-8">
         <div className="space-y-3">
           <p className="text-accent inline-flex items-center gap-2 font-medium">
-            <CheckIcon className="h-5 w-5" /> Emily está lista
+            <CheckIcon className="h-5 w-5" /> {t.ready}
           </p>
           <h2 className="text-4xl font-semibold tracking-[-0.03em] text-balance">{c.project}</h2>
           <p className="text-muted">{c.draft.objective}</p>
@@ -1282,13 +1301,10 @@ function Result({
               }}
             >
               {copied ? <CheckIcon className="h-4 w-4" /> : <CopyIcon className="h-4 w-4" />}
-              {copied ? "Copiado" : "Copiar"}
+              {copied ? t.copied : t.copy}
             </button>
           </div>
-          <p className="text-muted text-xs">
-            Con dominio propio será <span className="font-mono">{c.url}</span>. Por ahora el link
-            abre en este navegador (aún no hay base de datos).
-          </p>
+          <p className="text-muted text-xs">{t.domainNote(c.url)}</p>
         </div>
 
         <dl className="divide-border border-border divide-y border-y">
@@ -1302,19 +1318,19 @@ function Result({
 
         <div className="flex flex-wrap gap-3">
           <button className={primary} onClick={() => setTesting(true)}>
-            <MicIcon className="h-4 w-4" /> Probar aquí por voz
+            <MicIcon className="h-4 w-4" /> {t.testHere}
           </button>
           <Link href={path} target="_blank" className={quiet}>
-            Ver como participante <ArrowRight className="h-4 w-4" />
+            {t.asParticipant} <ArrowRight className="h-4 w-4" />
           </Link>
           <button className={quiet} onClick={onDone}>
-            <CheckIcon className="h-4 w-4" /> Terminar y salir
+            <CheckIcon className="h-4 w-4" /> {t.finishExit}
           </button>
         </div>
       </div>
 
-      <section aria-label="Preguntas" className="space-y-4">
-        <h3 className="font-medium">Lo que Emily va a preguntar</h3>
+      <section aria-label={t.factQuestions} className="space-y-4">
+        <h3 className="font-medium">{t.willAsk}</h3>
         <ol className="space-y-2">
           {c.draft.questions.map((q, i) => (
             <li
@@ -1330,7 +1346,7 @@ function Result({
           ))}
         </ol>
         {c.draft.areas.length > 0 && (
-          <p className="text-muted text-sm">Si surge, profundiza en: {c.draft.areas.join(", ")}.</p>
+          <p className="text-muted text-sm">{t.digInto(c.draft.areas.join(", "))}</p>
         )}
       </section>
     </div>
@@ -1338,6 +1354,7 @@ function Result({
 }
 
 function KindTag({ kind }: { kind: QuestionKind }) {
+  const { t } = useLang();
   return (
     <span
       className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -1346,7 +1363,7 @@ function KindTag({ kind }: { kind: QuestionKind }) {
           : "bg-sky-500/15 text-sky-700 dark:text-sky-300"
       }`}
     >
-      {kind === "abierta" ? "Abierta" : "Cerrada"}
+      {kind === "abierta" ? t.open : t.closed}
     </span>
   );
 }
@@ -1366,6 +1383,7 @@ function VoicePicker({
   locale: "es" | "en";
   onChange: (v: VoiceId) => void;
 }) {
+  const { t } = useLang();
   const [playing, setPlaying] = useState<VoiceId | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
 
@@ -1401,7 +1419,7 @@ function VoicePicker({
   return (
     <div
       role="radiogroup"
-      aria-label="Voz de Emily"
+      aria-label={t.voice}
       className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3"
     >
       {voices.map((v) => {
@@ -1420,11 +1438,11 @@ function VoicePicker({
           >
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium">{v.name}</span>
-              <span className="text-muted block truncate text-xs">{v.desc}</span>
+              <span className="text-muted block truncate text-xs">{v.desc[locale]}</span>
             </span>
             <button
               type="button"
-              aria-label={`Escuchar la voz ${v.name}`}
+              aria-label={t.listen(v.name)}
               onClick={(e) => {
                 e.stopPropagation();
                 void preview(v.id);
@@ -1473,11 +1491,13 @@ function Segmented<T extends string>({
   value,
   onChange,
   options,
+  compact = false,
 }: {
   label: string;
   value: T;
   onChange: (v: T) => void;
   options: [T, string][];
+  compact?: boolean;
 }) {
   return (
     <div
@@ -1492,7 +1512,7 @@ function Segmented<T extends string>({
           role="radio"
           aria-checked={value === v}
           onClick={() => onChange(v)}
-          className={`rounded-full px-5 py-2 text-sm transition ${
+          className={`rounded-full text-sm transition ${compact ? "px-3 py-1.5 font-medium" : "px-5 py-2"} ${
             value === v
               ? "bg-card text-accent font-medium shadow-sm"
               : "text-muted hover:text-foreground"

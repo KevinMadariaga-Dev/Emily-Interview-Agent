@@ -1,5 +1,6 @@
 import type { InterviewSummary, Turn } from "./ai";
 import { coverage, verdict, type AnswerStatus, type Draft } from "./config";
+import { reportLabels } from "./report-i18n";
 
 // Email-safe HTML: tables + inline styles (Gmail strips <style> and most layout CSS).
 const esc = (s: string) =>
@@ -9,10 +10,10 @@ const VIOLET = "#2a1063";
 const ACCENT = "#6d28d9";
 const MUTED = "#5f5a72";
 const tone = { ok: "#059669", mid: "#d97706", low: "#dc2626" } as const;
-const statusLabel: Record<AnswerStatus, [string, string]> = {
-  completa: ["Completa", "#059669"],
-  parcial: ["Parcial", "#d97706"],
-  sin_respuesta: ["Sin respuesta", "#dc2626"],
+const statusColor: Record<AnswerStatus, string> = {
+  completa: "#059669",
+  parcial: "#d97706",
+  sin_respuesta: "#dc2626",
 };
 
 /** The interview report Emily emails when an interview ends, ordered for a quick read. */
@@ -28,11 +29,11 @@ export function renderInterviewEmail({
   at: Date;
 }) {
   const pct = coverage(summary.answers);
-  const v = verdict(pct);
-  const who =
-    [draft.recipientName, draft.company].filter(Boolean).join(" · ") || "Participante anónimo";
-  const when = at.toLocaleString("es", { dateStyle: "long", timeStyle: "short" });
-  const subject = `Entrevista completada · ${draft.project} · ${pct}% (${v.label})`;
+  const L = reportLabels(draft.locale);
+  const v = { tone: verdict(pct).tone, label: L.verdict[verdict(pct).tone] };
+  const who = [draft.recipientName, draft.company].filter(Boolean).join(" · ") || L.anonymous;
+  const when = at.toLocaleString(draft.locale, { dateStyle: "long", timeStyle: "short" });
+  const subject = `${L.completed} · ${draft.project} · ${pct}% (${v.label})`;
 
   const row = (label: string, value: string) =>
     `<tr><td style="padding:6px 0;color:${MUTED};width:38%;vertical-align:top">${esc(label)}</td><td style="padding:6px 0;font-weight:600">${esc(value)}</td></tr>`;
@@ -46,7 +47,7 @@ export function renderInterviewEmail({
   const questions = `<ol style="margin:0;padding-left:20px;font-size:15px;line-height:1.7">${draft.questions
     .map(
       (q) =>
-        `<li>${esc(q.text)} <span style="color:${MUTED};font-size:12px">· ${q.kind}</span></li>`,
+        `<li>${esc(q.text)} <span style="color:${MUTED};font-size:12px">· ${L.kind[q.kind]}</span></li>`,
     )
     .join("")}</ol>`;
   const quotes = (summary.quotes ?? [])
@@ -58,7 +59,7 @@ export function renderInterviewEmail({
 
   const answers = summary.answers
     .map((a, i) => {
-      const [label, color] = statusLabel[a.status];
+      const [label, color] = [L.status[a.status], statusColor[a.status]];
       return `<tr><td style="padding:14px 0;border-top:1px solid #e4e0ee">
         <div style="font-size:13px;color:${MUTED}">${i + 1}. ${esc(a.question)}
           <span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:${color}1a;color:${color};font-size:11px;font-weight:600">${label}</span></div>
@@ -70,7 +71,7 @@ export function renderInterviewEmail({
   const transcript = history
     .map(
       (t) =>
-        `<p style="margin:6px 0;font-size:13px"><strong style="color:${t.role === "emily" ? ACCENT : "#111"}">${t.role === "emily" ? "Emily" : esc(draft.recipientName || "Participante")}:</strong> ${esc(t.text)}</p>`,
+        `<p style="margin:6px 0;font-size:13px"><strong style="color:${t.role === "emily" ? ACCENT : "#111"}">${t.role === "emily" ? "Emily" : esc(draft.recipientName || L.participant)}:</strong> ${esc(t.text)}</p>`,
     )
     .join("");
 
@@ -80,7 +81,7 @@ export function renderInterviewEmail({
   <tr><td style="background:${VIOLET};padding:24px 28px;color:#fff">
     <div style="font-size:12px;letter-spacing:3px;font-weight:700">NEO<span style="color:#c4b5fd">ERA</span> · EMILY</div>
     <div style="margin-top:10px;font-size:22px;font-weight:700">${esc(draft.project)}</div>
-    <div style="margin-top:4px;font-size:14px;color:#ddd6fe">Entrevista completada · ${esc(when)}</div>
+    <div style="margin-top:4px;font-size:14px;color:#ddd6fe">${L.completed} · ${esc(when)}</div>
   </td></tr>
   <tr><td style="padding:24px 28px">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
@@ -89,69 +90,69 @@ export function renderInterviewEmail({
       </td>
       <td style="vertical-align:middle">
         <div><span style="padding:4px 12px;border-radius:999px;background:${tone[v.tone]};color:#fff;font-size:13px;font-weight:700">${v.label}</span></div>
-        <div style="margin-top:8px;font-size:14px"><strong>${summary.objective.met ? "Objetivo cumplido." : "Objetivo no cumplido."}</strong> ${esc(summary.objective.reason)}</div>
-        <div style="margin-top:4px;font-size:12px;color:${MUTED}">Porcentaje de la información obligatoria obtenida (completa = 1, parcial = ½).</div>
+        <div style="margin-top:8px;font-size:14px"><strong>${summary.objective.met ? L.met : L.notMet}</strong> ${esc(summary.objective.reason)}</div>
+        <div style="margin-top:4px;font-size:12px;color:${MUTED}">${L.pctNote}</div>
       </td>
     </tr></table>
 
-    ${h2("Datos de la entrevista")}
+    ${h2(L.data)}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px">
-      ${row("Participante", who)}
-      ${row("Objetivo", draft.objective)}
-      ${row("Idioma", draft.locale === "es" ? "Español" : "English")}
-      ${row("Preguntas", String(draft.questions.length))}
+      ${row(L.participant, who)}
+      ${row(L.objective, draft.objective)}
+      ${row(L.language, L.langName)}
+      ${row(L.questions, String(draft.questions.length))}
     </table>
 
-    ${h2("Preguntas de la entrevista")}
+    ${h2(L.interviewQuestions)}
     ${questions}
 
-    ${h2("Resumen")}
+    ${h2(L.summary)}
     <p style="margin:0;font-size:15px;line-height:1.6">${esc(summary.summary)}</p>
 
-    ${list(summary.keyFacts, "Información clave")}
-    ${list(summary.painPoints, "Dolores y problemas")}
-    ${list(summary.insights, "Hallazgos")}
-    ${quotes ? `${h2("Citas del participante")}${quotes}` : ""}
-    ${list(summary.nextSteps, "Próximos pasos y oportunidades")}
+    ${list(summary.keyFacts, L.keyFacts)}
+    ${list(summary.painPoints, L.pains)}
+    ${list(summary.insights, L.insights)}
+    ${quotes ? `${h2(L.quotes)}${quotes}` : ""}
+    ${list(summary.nextSteps, L.nextSteps)}
 
-    ${h2("Respuestas por pregunta")}
+    ${h2(L.perQuestion)}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${answers}</table>
 
-    ${h2("Conversación completa")}
+    ${h2(L.conversation)}
     <div style="padding:12px 16px;background:#f7f6fb;border-radius:12px">${transcript}</div>
   </td></tr>
-  <tr><td style="padding:16px 28px;background:#f7f6fb;font-size:12px;color:${MUTED}">Enviado automáticamente por Emily al terminar la entrevista.</td></tr>
+  <tr><td style="padding:16px 28px;background:#f7f6fb;font-size:12px;color:${MUTED}">${L.footer}</td></tr>
 </table></td></tr></table></body></html>`;
 
   const text = [
-    `${draft.project} — Entrevista completada (${when})`,
-    `Información obtenida: ${pct}% · ${v.label}`,
-    `${summary.objective.met ? "Objetivo cumplido" : "Objetivo no cumplido"}: ${summary.objective.reason}`,
+    `${draft.project} — ${L.completed} (${when})`,
+    `${L.infoGot}: ${pct}% · ${v.label}`,
+    `${summary.objective.met ? L.met : L.notMet} ${summary.objective.reason}`,
     "",
-    `Participante: ${who}`,
-    `Objetivo: ${draft.objective}`,
+    `${L.participant}: ${who}`,
+    `${L.objective}: ${draft.objective}`,
     "",
-    "PREGUNTAS",
-    ...draft.questions.map((q, i) => `${i + 1}. ${q.text} (${q.kind})`),
+    L.questions.toUpperCase(),
+    ...draft.questions.map((q, i) => `${i + 1}. ${q.text} (${L.kind[q.kind]})`),
     "",
-    "RESUMEN",
+    L.summary.toUpperCase(),
     summary.summary,
     "",
-    ...textList("INFORMACIÓN CLAVE", summary.keyFacts),
-    ...textList("DOLORES Y PROBLEMAS", summary.painPoints),
-    ...textList("HALLAZGOS", summary.insights),
+    ...textList(L.keyFacts.toUpperCase(), summary.keyFacts),
+    ...textList(L.pains.toUpperCase(), summary.painPoints),
+    ...textList(L.insights.toUpperCase(), summary.insights),
     ...textList(
-      "CITAS",
+      L.quotes.toUpperCase(),
       summary.quotes?.map((q) => `“${q}”`),
     ),
-    ...textList("PRÓXIMOS PASOS", summary.nextSteps),
-    "RESPUESTAS",
+    ...textList(L.nextSteps.toUpperCase(), summary.nextSteps),
+    L.perQuestion.toUpperCase(),
     ...summary.answers.map(
-      (a, i) => `${i + 1}. ${a.question} [${statusLabel[a.status][0]}]\n   ${a.answer}`,
+      (a, i) => `${i + 1}. ${a.question} [${L.status[a.status]}]\n   ${a.answer}`,
     ),
     "",
-    "CONVERSACIÓN",
-    ...history.map((t) => `${t.role === "emily" ? "Emily" : "Participante"}: ${t.text}`),
+    L.conversation.toUpperCase(),
+    ...history.map((t) => `${t.role === "emily" ? "Emily" : L.participant}: ${t.text}`),
   ].join("\n");
 
   return { subject, html, text };

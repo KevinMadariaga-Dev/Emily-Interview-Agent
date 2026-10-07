@@ -1,6 +1,7 @@
 import type { InterviewSummary, Turn } from "./ai";
 import { coverage, verdict, type AnswerStatus, type Draft } from "./config";
 import schema from "./notion-schema.json";
+import { reportLabels } from "./report-i18n";
 
 /**
  * Columns of the "Emily · Entrevistas" database. Shared with `scripts/notion-setup.mjs`, which
@@ -11,10 +12,10 @@ export const NOTION_PROPERTIES = schema;
 /** Notion accepts at most 100 blocks per request; the rest is appended in batches. */
 export const NOTION_BATCH = 100;
 
-const statusText: Record<AnswerStatus, string> = {
-  completa: "✅ Completa",
-  parcial: "🟡 Parcial",
-  sin_respuesta: "🔴 Sin respuesta",
+const statusIcon: Record<AnswerStatus, string> = {
+  completa: "✅",
+  parcial: "🟡",
+  sin_respuesta: "🔴",
 };
 
 type RichText = { type: "text"; text: { content: string }; annotations: { bold: boolean } };
@@ -67,8 +68,9 @@ export function toNotionInterviewPage({
   at: Date;
 }) {
   const pct = coverage(summary.answers);
-  const v = verdict(pct);
-  const who = draft.recipientName || "Participante anónimo";
+  const v = verdict(pct); // v.label (Spanish) only for the "Veredicto" select: it's the DB schema
+  const L = reportLabels(draft.locale);
+  const who = draft.recipientName || L.anonymous;
 
   // Participant turns tagged with the question they answer (older histories have no tag).
   const saidFor = (i: number) =>
@@ -80,10 +82,13 @@ export function toNotionInterviewPage({
     return [
       subheading(`${i + 1}. ${q.text}`),
       paragraph([
-        ...rt(`${a ? statusText[a.status] : "🔴 Sin respuesta"} · pregunta ${q.kind}`, true),
+        ...rt(
+          `${a ? `${statusIcon[a.status]} ${L.status[a.status]}` : `🔴 ${L.noAnswer}`} · ${L.questionKind(L.kind[q.kind])}`,
+          true,
+        ),
       ]),
-      paragraph([...rt("Resumen de la respuesta: ", true), ...rt(a?.answer || "Sin respuesta")]),
-      ...(said.length ? [paragraph(rt("Lo que dijo:", true)), ...said.map(quote)] : []),
+      paragraph([...rt(L.answerSummary, true), ...rt(a?.answer || L.noAnswer)]),
+      ...(said.length ? [paragraph(rt(L.said, true)), ...said.map(quote)] : []),
     ];
   });
 
@@ -114,33 +119,29 @@ export function toNotionInterviewPage({
                 ? "yellow_background"
                 : "red_background",
           rich_text: [
-            ...rt(`${pct}% de la información obtenida · ${v.label}\n`, true),
-            ...rt(
-              `${summary.objective.met ? "Objetivo cumplido." : "Objetivo no cumplido."} ${summary.objective.reason}`,
-            ),
+            ...rt(`${L.pctLine(pct)} · ${L.verdict[v.tone]}\n`, true),
+            ...rt(`${summary.objective.met ? L.met : L.notMet} ${summary.objective.reason}`),
           ],
         },
       },
-      heading("Datos de la entrevista"),
+      heading(L.data),
       bullet(
-        `Participante: ${[draft.recipientName, draft.company].filter(Boolean).join(" · ") || "Anónimo"}`,
+        `${L.participant}: ${[draft.recipientName, draft.company].filter(Boolean).join(" · ") || L.anonymous}`,
       ),
-      bullet(`Objetivo: ${draft.objective}`),
-      bullet(
-        `Idioma: ${draft.locale === "es" ? "Español" : "English"} · ${draft.questions.length} preguntas`,
-      ),
-      heading("Resumen"),
+      bullet(`${L.objective}: ${draft.objective}`),
+      bullet(`${L.language}: ${L.langName} · ${L.nQuestions(draft.questions.length)}`),
+      heading(L.summary),
       paragraph(rt(summary.summary)),
-      ...section("Información clave", summary.keyFacts, bullet),
-      ...section("Dolores y problemas", summary.painPoints, bullet),
-      ...section("Hallazgos", summary.insights, bullet),
-      ...section("Citas del participante", summary.quotes, quote),
-      ...section("Próximos pasos y oportunidades", summary.nextSteps, todo),
+      ...section(L.keyFacts, summary.keyFacts, bullet),
+      ...section(L.pains, summary.painPoints, bullet),
+      ...section(L.insights, summary.insights, bullet),
+      ...section(L.quotes, summary.quotes, quote),
+      ...section(L.nextSteps, summary.nextSteps, todo),
       divider,
-      heading("Preguntas y respuestas"),
+      heading(L.qa),
       ...qa,
       divider,
-      heading("Conversación completa"),
+      heading(L.conversation),
       ...history.map((t) =>
         paragraph([...rt(`${t.role === "emily" ? "Emily" : who}: `, true), ...rt(t.text)]),
       ),

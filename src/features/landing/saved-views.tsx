@@ -1,21 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { translateSummary } from "./ai";
 import { DOMAIN } from "@/features/demo/mock";
 import { coverage, verdict, voices } from "./config";
 import { ArrowRight, CheckIcon, CopyIcon, MicIcon, PlusIcon, SparkIcon, XIcon } from "./icons";
+import { dict, useLang, type Lang } from "./i18n";
 import { InterviewLive, SuccessReport } from "./interview-live";
-import { deleteEmily, type SavedEmily, type SavedResult } from "./store";
+import { deleteEmily, saveResultTranslation, type SavedEmily, type SavedResult } from "./store";
 import { primary, quiet, type Msg } from "./ui";
 import type { OrbMode } from "./voice-orb";
 
-const date = (iso: string) =>
+const date = (iso: string, lang: Lang) =>
   iso
-    ? new Date(iso).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })
+    ? new Date(iso).toLocaleDateString(lang, { day: "numeric", month: "short", year: "numeric" })
     : "";
-const dateTime = (iso: string) =>
-  new Date(iso).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" });
+const dateTime = (iso: string, lang: Lang) =>
+  new Date(iso).toLocaleString(lang, { dateStyle: "medium", timeStyle: "short" });
 
 /** "Mis Emilys": every Emily created in this browser, saved under its project name. */
 export function EmilyList({
@@ -31,6 +33,7 @@ export function EmilyList({
   onFeed: (m: Msg[]) => void;
   onCreate: () => void;
 }) {
+  const { lang, t } = useLang();
   const [testing, setTesting] = useState<SavedEmily | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -53,13 +56,10 @@ export function EmilyList({
   if (!emilys.length)
     return (
       <div className="my-auto max-w-md space-y-4 py-16">
-        <h2 className="text-3xl font-semibold tracking-[-0.03em]">Aún no creas ninguna Emily</h2>
-        <p className="text-muted">
-          Cada Emily que crees aparece aquí con el nombre de su proyecto, lista para probar o
-          compartir.
-        </p>
+        <h2 className="text-3xl font-semibold tracking-[-0.03em]">{t.noEmilysTitle}</h2>
+        <p className="text-muted">{t.noEmilysBody}</p>
         <button className={primary} onClick={onCreate}>
-          <PlusIcon className="h-4 w-4" /> Crear mi primera Emily
+          <PlusIcon className="h-4 w-4" /> {t.firstEmily}
         </button>
       </div>
     );
@@ -78,14 +78,11 @@ export function EmilyList({
     <div className="space-y-6 py-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1">
-          <h2 className="text-3xl font-semibold tracking-[-0.03em]">Mis Emilys</h2>
-          <p className="text-muted text-sm">
-            {emilys.length} {emilys.length === 1 ? "Emily creada" : "Emilys creadas"} en este
-            navegador.
-          </p>
+          <h2 className="text-3xl font-semibold tracking-[-0.03em]">{t.myEmilys}</h2>
+          <p className="text-muted text-sm">{t.createdHere(emilys.length)}</p>
         </div>
         <button className={primary} onClick={onCreate}>
-          <PlusIcon className="h-4 w-4" /> Nueva Emily
+          <PlusIcon className="h-4 w-4" /> {t.newEmily}
         </button>
       </header>
 
@@ -104,37 +101,37 @@ export function EmilyList({
               </div>
               <ul className="flex flex-wrap gap-1.5 text-xs">
                 {[
-                  `${draft.questions.length} preguntas`,
-                  draft.locale === "es" ? "Español" : "English",
-                  voice ? `Voz ${voice.name}` : "",
+                  t.nQuestions(draft.questions.length),
+                  dict[draft.locale].langName,
+                  voice ? t.chipVoice(`${voice.name} · ${voice.desc[lang]}`) : "",
                   draft.recipientName || draft.company
-                    ? `Para ${[draft.recipientName, draft.company].filter(Boolean).join(" · ")}`
-                    : "Link abierto",
-                  done ? `${done} ${done === 1 ? "entrevista" : "entrevistas"}` : "",
-                  draft.reportEmail ? `Resultados a ${draft.reportEmail}` : "",
+                    ? t.chipFor([draft.recipientName, draft.company].filter(Boolean).join(" · "))
+                    : t.openLinkChip,
+                  done ? t.chipInterviews(done) : "",
+                  draft.reportEmail ? t.chipReport(draft.reportEmail) : "",
                 ]
                   .filter(Boolean)
-                  .map((t) => (
+                  .map((chip) => (
                     <li
-                      key={t}
+                      key={chip}
                       className="bg-accent-soft/70 text-accent rounded-full px-2.5 py-1 font-medium"
                     >
-                      {t}
+                      {chip}
                     </li>
                   ))}
               </ul>
               <p className="text-muted font-mono text-xs">
-                {DOMAIN}/{slug} · {date(createdAt)}
+                {DOMAIN}/{slug} · {date(createdAt, lang)}
               </p>
               <div className="mt-auto flex flex-wrap gap-2">
                 <button
                   className={`${primary} px-4 py-2 text-sm`}
                   onClick={() => setTesting({ slug, draft, createdAt })}
                 >
-                  <MicIcon className="h-4 w-4" /> Probar
+                  <MicIcon className="h-4 w-4" /> {t.test}
                 </button>
                 <Link href={`/e/${slug}`} target="_blank" className={`${quiet} px-4 py-2`}>
-                  Abrir <ArrowRight className="h-4 w-4" />
+                  {t.openPage} <ArrowRight className="h-4 w-4" />
                 </Link>
                 <button className={`${quiet} px-4 py-2`} onClick={() => void copy(slug)}>
                   {copied === slug ? (
@@ -142,7 +139,7 @@ export function EmilyList({
                   ) : (
                     <CopyIcon className="h-4 w-4" />
                   )}
-                  {copied === slug ? "Copiado" : "Link"}
+                  {copied === slug ? t.copied : t.linkWord}
                 </button>
                 {confirming === slug ? (
                   <button
@@ -153,12 +150,12 @@ export function EmilyList({
                     }}
                     onBlur={() => setConfirming(null)}
                   >
-                    ¿Eliminar? Confirmar
+                    {t.confirmDelete}
                   </button>
                 ) : (
                   <button
                     className={`${quiet} px-3 py-2`}
-                    aria-label={`Eliminar ${draft.project}`}
+                    aria-label={t.deleteAria(draft.project)}
                     onClick={() => setConfirming(slug)}
                   >
                     <XIcon className="h-4 w-4" />
@@ -181,16 +178,14 @@ export function ResultsList({
   results: SavedResult[];
   onCreate: () => void;
 }) {
+  const { t } = useLang();
   if (!results.length)
     return (
       <div className="my-auto max-w-md space-y-4 py-16">
-        <h2 className="text-3xl font-semibold tracking-[-0.03em]">Sin entrevistas todavía</h2>
-        <p className="text-muted">
-          Cuando alguien complete una entrevista con una de tus Emilys (o la pruebes tú), el resumen
-          aparece aquí.
-        </p>
+        <h2 className="text-3xl font-semibold tracking-[-0.03em]">{t.noResultsTitle}</h2>
+        <p className="text-muted">{t.noResultsBody}</p>
         <button className={quiet} onClick={onCreate}>
-          Ir a Mis Emilys <ArrowRight className="h-4 w-4" />
+          {t.goEmilys} <ArrowRight className="h-4 w-4" />
         </button>
       </div>
     );
@@ -198,68 +193,102 @@ export function ResultsList({
   return (
     <div className="space-y-6 py-8">
       <header className="space-y-1">
-        <h2 className="text-3xl font-semibold tracking-[-0.03em]">Resultados</h2>
-        <p className="text-muted text-sm">
-          {results.length}{" "}
-          {results.length === 1 ? "entrevista completada" : "entrevistas completadas"}.
-        </p>
+        <h2 className="text-3xl font-semibold tracking-[-0.03em]">{t.results}</h2>
+        <p className="text-muted text-sm">{t.nCompleted(results.length)}</p>
       </header>
       <ul className="space-y-4">
         {results.map((r) => (
-          <li key={r.slug + r.at} className="border-border bg-card rounded-2xl border p-5">
-            <details className="group">
-              <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1 space-y-1">
-                  <p className="text-accent text-xs font-medium">
-                    {r.project} · {dateTime(r.at)}
-                  </p>
-                  <p className="leading-relaxed">{r.summary.summary}</p>
-                </div>
-                {r.summary.objective && (
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ${
-                      {
-                        ok: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-                        mid: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-                        low: "bg-red-500/15 text-red-700 dark:text-red-300",
-                      }[verdict(coverage(r.summary.answers)).tone]
-                    }`}
-                  >
-                    {coverage(r.summary.answers)}% · {verdict(coverage(r.summary.answers)).label}
-                  </span>
-                )}
-                <span className="text-muted text-sm group-open:hidden">Ver detalle</span>
-                <span className="text-muted hidden text-sm group-open:inline">Ocultar</span>
-              </summary>
-              <div className="mt-5">
-                {r.summary.objective ? (
-                  <SuccessReport summary={r.summary} />
-                ) : (
-                  <div className="grid gap-6 xl:grid-cols-2">
-                    {r.summary.insights.length > 0 && (
-                      <ul className="space-y-2">
-                        {r.summary.insights.map((x) => (
-                          <li key={x} className="flex gap-2 text-sm">
-                            <SparkIcon className="text-accent mt-0.5 h-4 w-4 shrink-0" /> {x}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <dl className="divide-border divide-y">
-                      {r.summary.answers.map((a) => (
-                        <div key={a.question} className="space-y-1 py-3 first:pt-0">
-                          <dt className="text-muted text-sm">{a.question}</dt>
-                          <dd className="text-sm">{a.answer}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </div>
-                )}
-              </div>
-            </details>
-          </li>
+          <ResultItem key={r.slug + r.at} r={r} />
         ))}
       </ul>
     </div>
+  );
+}
+
+const inFlight = new Set<string>(); // one translation request per result + language
+
+/**
+ * The result's summary in the UI language: the original when the interview was held in it,
+ * otherwise an AI translation (requested once, then cached with the result).
+ */
+function useSummaryIn(r: SavedResult, lang: Lang) {
+  const cached = lang === r.locale ? r.summary : r.translations?.[lang];
+  const [failed, setFailed] = useState<Lang | null>(null);
+  useEffect(() => {
+    if (cached || failed === lang) return;
+    const key = `${r.slug}|${r.at}|${lang}`;
+    if (inFlight.has(key)) return;
+    inFlight.add(key);
+    translateSummary(r.summary, lang)
+      .then((s) => (s ? saveResultTranslation(r.slug, r.at, lang, s) : setFailed(lang)))
+      .catch(() => setFailed(lang))
+      .finally(() => inFlight.delete(key));
+  }, [cached, failed, lang, r.slug, r.at, r.summary]);
+  return {
+    summary: cached ?? r.summary,
+    note: cached ? "" : failed === lang ? dict[lang].resultUntranslated : dict[lang].translating,
+  };
+}
+
+/** One result, labels and content in the UI language. */
+function ResultItem({ r: saved }: { r: SavedResult }) {
+  const { lang, t } = useLang();
+  const { summary, note } = useSummaryIn(saved, lang);
+  const r = { ...saved, summary };
+  return (
+    <li lang={lang} className="border-border bg-card rounded-2xl border p-5">
+      <details className="group">
+        <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-accent text-xs font-medium">
+              {r.project} · {dateTime(r.at, lang)}
+            </p>
+            <p className="leading-relaxed">{r.summary.summary}</p>
+            {note && <p className="text-muted text-xs">{note}</p>}
+          </div>
+          {r.summary.objective && (
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ${
+                {
+                  ok: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+                  mid: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                  low: "bg-red-500/15 text-red-700 dark:text-red-300",
+                }[verdict(coverage(r.summary.answers)).tone]
+              }`}
+            >
+              {coverage(r.summary.answers)}% ·{" "}
+              {t.verdictLabel[verdict(coverage(r.summary.answers)).tone]}
+            </span>
+          )}
+          <span className="text-muted text-sm group-open:hidden">{t.seeDetail}</span>
+          <span className="text-muted hidden text-sm group-open:inline">{t.hide}</span>
+        </summary>
+        <div className="mt-5">
+          {r.summary.objective ? (
+            <SuccessReport summary={r.summary} />
+          ) : (
+            <div className="grid gap-6 xl:grid-cols-2">
+              {r.summary.insights.length > 0 && (
+                <ul className="space-y-2">
+                  {r.summary.insights.map((x) => (
+                    <li key={x} className="flex gap-2 text-sm">
+                      <SparkIcon className="text-accent mt-0.5 h-4 w-4 shrink-0" /> {x}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <dl className="divide-border divide-y">
+                {r.summary.answers.map((a) => (
+                  <div key={a.question} className="space-y-1 py-3 first:pt-0">
+                    <dt className="text-muted text-sm">{a.question}</dt>
+                    <dd className="text-sm">{a.answer}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+        </div>
+      </details>
+    </li>
   );
 }

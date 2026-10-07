@@ -31,7 +31,7 @@ describe("landing config", () => {
       expires: "",
       noExpiry: false,
     };
-    expect(missingFields(empty)).toEqual(["el proyecto", "el objetivo", "las preguntas"]);
+    expect(missingFields(empty)).toEqual(["project", "objective", "questions"]);
     expect(
       missingFields({
         ...empty,
