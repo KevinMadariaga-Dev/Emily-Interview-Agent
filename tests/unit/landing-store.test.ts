@@ -12,8 +12,15 @@ Object.assign(globalThis, {
   window: { dispatchEvent: () => true },
 });
 
-const { deleteEmily, loadEmily, saveEmily, saveResult, saveResultTranslation, uniqueSlug } =
-  await import("@/features/landing/store");
+const {
+  deleteEmily,
+  loadEmily,
+  saveEmily,
+  saveEmilyTranslation,
+  saveResult,
+  saveResultTranslation,
+  uniqueSlug,
+} = await import("@/features/landing/store");
 
 const draft = { project: "Boutique Luna", questions: [] } as unknown as Draft;
 const summary = {
@@ -48,6 +55,15 @@ describe("landing store", () => {
     const [after] = JSON.parse(mem.get("emily:results:t")!);
     expect(after.summary.summary).toBe("ok"); // original untouched
     expect(after.translations.en.summary).toBe("translated");
+  });
+
+  it("caches a card translation without touching the Emily's own text or language", () => {
+    saveEmily("c", { ...draft, locale: "es" } as Draft);
+    saveEmilyTranslation("c", "en", { project: "Luna Boutique", objective: "Goal" });
+    const saved = JSON.parse(mem.get("emily:config:c")!);
+    expect(saved.draft.project).toBe("Boutique Luna");
+    expect(saved.translations.en.project).toBe("Luna Boutique");
+    expect(loadEmily("c")!.locale).toBe("es");
   });
 
   it("deletes the Emily and its results", () => {

@@ -2,13 +2,19 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { translateSummary } from "./ai";
+import { translateDraft, translateSummary } from "./ai";
 import { DOMAIN } from "@/features/demo/mock";
 import { coverage, verdict, voices } from "./config";
 import { ArrowRight, CheckIcon, CopyIcon, MicIcon, PlusIcon, SparkIcon, XIcon } from "./icons";
 import { dict, useLang, type Lang } from "./i18n";
 import { InterviewLive, SuccessReport } from "./interview-live";
-import { deleteEmily, saveResultTranslation, type SavedEmily, type SavedResult } from "./store";
+import {
+  deleteEmily,
+  saveEmilyTranslation,
+  saveResultTranslation,
+  type SavedEmily,
+  type SavedResult,
+} from "./store";
 import { primary, quiet, type Msg } from "./ui";
 import type { OrbMode } from "./voice-orb";
 
@@ -87,7 +93,8 @@ export function EmilyList({
       </header>
 
       <ul className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-        {emilys.map(({ slug, draft, createdAt }) => {
+        {emilys.map((e) => {
+          const { slug, draft, createdAt } = e;
           const voice = voices.find((v) => v.id === draft.voice);
           const done = results.filter((r) => r.slug === slug).length;
           return (
@@ -95,14 +102,11 @@ export function EmilyList({
               key={slug}
               className="border-border bg-card hover:border-accent/40 flex flex-col gap-4 rounded-2xl border p-5 transition-[border-color,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0"
             >
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold tracking-[-0.01em]">{draft.project}</h3>
-                <p className="text-muted line-clamp-2 text-sm">{draft.objective}</p>
-              </div>
+              <CardText e={e} />
               <ul className="flex flex-wrap gap-1.5 text-xs">
                 {[
                   t.nQuestions(draft.questions.length),
-                  dict[draft.locale].langName,
+                  t.langOf[draft.locale],
                   voice ? t.chipVoice(`${voice.name} · ${voice.desc[lang]}`) : "",
                   draft.recipientName || draft.company
                     ? t.chipFor([draft.recipientName, draft.company].filter(Boolean).join(" · "))
@@ -173,9 +177,11 @@ export function EmilyList({
 /** "Resultados": summaries of every interview completed with a saved Emily (newest first). */
 export function ResultsList({
   results,
+  emilys,
   onCreate,
 }: {
   results: SavedResult[];
+  emilys: SavedEmily[];
   onCreate: () => void;
 }) {
   const { t } = useLang();
@@ -198,42 +204,85 @@ export function ResultsList({
       </header>
       <ul className="space-y-4">
         {results.map((r) => (
-          <ResultItem key={r.slug + r.at} r={r} />
+          <ResultItem key={r.slug + r.at} r={r} emily={emilys.find((e) => e.slug === r.slug)} />
         ))}
       </ul>
     </div>
   );
 }
 
-const inFlight = new Set<string>(); // one translation request per result + language
+const inFlight = new Set<string>(); // one translation request per item + language
 
 /**
- * The result's summary in the UI language: the original when the interview was held in it,
- * otherwise an AI translation (requested once, then cached with the result).
+ * Saved content in the UI language: the original when it's already in it, otherwise an AI
+ * translation requested once and cached with the item (`save`). Falls back to the original.
  */
-function useSummaryIn(r: SavedResult, lang: Lang) {
-  const cached = lang === r.locale ? r.summary : r.translations?.[lang];
-  const [failed, setFailed] = useState<Lang | null>(null);
+function useInLang<T>(
+  lang: Lang,
+  key: string,
+  original: T,
+  cached: T | undefined,
+  translate: () => Promise<T | null>,
+  save: (v: T) => void,
+) {
+  const [failed, setFailed] = useState<string | null>(null);
   useEffect(() => {
-    if (cached || failed === lang) return;
-    const key = `${r.slug}|${r.at}|${lang}`;
-    if (inFlight.has(key)) return;
+    if (cached || failed === key || inFlight.has(key)) return;
     inFlight.add(key);
-    translateSummary(r.summary, lang)
-      .then((s) => (s ? saveResultTranslation(r.slug, r.at, lang, s) : setFailed(lang)))
-      .catch(() => setFailed(lang))
+    translate()
+      .then((v) => (v ? save(v) : setFailed(key)))
+      .catch(() => setFailed(key))
       .finally(() => inFlight.delete(key));
-  }, [cached, failed, lang, r.slug, r.at, r.summary]);
+  }, [cached, failed, key, translate, save]);
   return {
-    summary: cached ?? r.summary,
-    note: cached ? "" : failed === lang ? dict[lang].resultUntranslated : dict[lang].translating,
+    value: cached ?? original,
+    note: cached ? "" : failed === key ? dict[lang].resultUntranslated : dict[lang].translating,
   };
 }
 
+/** A card's project and goal in the UI language. */
+function useEmilyText(e: SavedEmily | undefined, lang: Lang) {
+  const original = { project: e?.draft.project ?? "", objective: e?.draft.objective ?? "" };
+  return useInLang(
+    lang,
+    `${e?.slug}|${e?.createdAt}|${lang}`,
+    original,
+    !e || lang === e.draft.locale ? original : e.translations?.[lang], // no Emily: nothing to do
+    () => translateDraft({ ...e!.draft, questions: [], areas: [] }, lang),
+    (tr) => saveEmilyTranslation(e!.slug, lang, { project: tr.project, objective: tr.objective }),
+  );
+}
+
+function CardText({ e }: { e: SavedEmily }) {
+  const { lang } = useLang();
+  const { value, note } = useEmilyText(e, lang);
+  return (
+    <div lang={lang} className="space-y-1">
+      <h3 className="text-lg font-semibold tracking-[-0.01em]">{value.project}</h3>
+      <p className="text-muted line-clamp-2 text-sm">{value.objective}</p>
+      {note && <p className="text-muted text-xs">{note}</p>}
+    </div>
+  );
+}
+
+/** The result's project name, translated through its Emily's card (one cached translation). */
+function useProjectIn(project: string, emily: SavedEmily | undefined, lang: Lang) {
+  const { value } = useEmilyText(emily, lang);
+  return emily?.draft.project === project ? value.project : project;
+}
+
 /** One result, labels and content in the UI language. */
-function ResultItem({ r: saved }: { r: SavedResult }) {
+function ResultItem({ r: saved, emily }: { r: SavedResult; emily?: SavedEmily }) {
   const { lang, t } = useLang();
-  const { summary, note } = useSummaryIn(saved, lang);
+  const project = useProjectIn(saved.project, emily, lang);
+  const { value: summary, note } = useInLang(
+    lang,
+    `${saved.slug}|${saved.at}|${lang}`,
+    saved.summary,
+    lang === saved.locale ? saved.summary : saved.translations?.[lang],
+    () => translateSummary(saved.summary, lang),
+    (s) => saveResultTranslation(saved.slug, saved.at, lang, s),
+  );
   const r = { ...saved, summary };
   return (
     <li lang={lang} className="border-border bg-card rounded-2xl border p-5">
@@ -241,7 +290,7 @@ function ResultItem({ r: saved }: { r: SavedResult }) {
         <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1 space-y-1">
             <p className="text-accent text-xs font-medium">
-              {r.project} · {dateTime(r.at, lang)}
+              {project} · {dateTime(r.at, lang)}
             </p>
             <p className="leading-relaxed">{r.summary.summary}</p>
             {note && <p className="text-muted text-xs">{note}</p>}

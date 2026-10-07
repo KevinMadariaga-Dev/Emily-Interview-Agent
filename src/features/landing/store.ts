@@ -7,7 +7,13 @@ import { normalizeDraft, type Draft } from "./config";
 // ponytail: created Emilys and their results live in this browser's localStorage until the DB is
 // wired (createTemplateWithLink + sessions). Links therefore open only on the creating device.
 
-export type SavedEmily = { slug: string; draft: Draft; createdAt: string };
+export type SavedEmily = {
+  slug: string;
+  draft: Draft;
+  createdAt: string;
+  /** Card text translated to the other UI language (display only: the Emily keeps her language). */
+  translations?: Partial<Record<Draft["locale"], { project: string; objective: string }>>;
+};
 export type SavedResult = {
   slug: string;
   project: string;
@@ -56,6 +62,16 @@ export function uniqueSlug(base: string) {
 export function saveEmily(slug: string, draft: Draft) {
   write(cfgKey(slug), { slug, draft, createdAt: new Date().toISOString() } satisfies SavedEmily);
   write(LIST, [slug, ...read<string[]>(LIST, []).filter((s) => s !== slug)]);
+}
+
+export function saveEmilyTranslation(
+  slug: string,
+  lang: Draft["locale"],
+  text: { project: string; objective: string },
+) {
+  const saved = read<SavedEmily | null>(cfgKey(slug), null);
+  if (!saved || !("draft" in saved)) return; // older bare-draft entries: shown untranslated
+  write(cfgKey(slug), { ...saved, translations: { ...saved.translations, [lang]: text } });
 }
 
 export function loadEmily(slug: string): Draft | null {

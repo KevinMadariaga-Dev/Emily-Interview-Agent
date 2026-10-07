@@ -249,6 +249,18 @@ export function Landing() {
                 ))}
               </div>
             )}
+            {wide && section !== "crear" && (
+              <Segmented
+                label={t.language}
+                value={lang}
+                onChange={setLang}
+                options={[
+                  ["es", "ES"],
+                  ["en", "EN"],
+                ]}
+                compact
+              />
+            )}
           </nav>
 
           <div
@@ -272,7 +284,11 @@ export function Landing() {
                 onCreate={() => go("crear")}
               />
             ) : section === "resultados" ? (
-              <ResultsList results={saved.results} onCreate={() => go("emilys")} />
+              <ResultsList
+                results={saved.results}
+                emilys={saved.emilys}
+                onCreate={() => go("emilys")}
+              />
             ) : !open ? (
               <div className="my-auto max-w-xl space-y-10 py-16">
                 <div className="space-y-6">
@@ -1266,7 +1282,7 @@ function Result({
     [t.factFor, c.recipient],
     [t.factQuestions, String(c.questions)],
     [t.factAreas, String(c.areas)],
-    [t.factLang, dict[c.locale].langName],
+    [t.factLang, t.langOf[c.locale]],
     [t.factVoice, voice ? `${voice.name} · ${voice.desc[lang]}` : "—"],
     [t.factReport, c.draft.reportEmail || t.onlyResults],
     [t.factLink, c.status],
