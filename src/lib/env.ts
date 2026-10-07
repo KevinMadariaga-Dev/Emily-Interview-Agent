@@ -21,12 +21,14 @@ const serverSchema = z.object({
   VOICE_PROVIDER: z.enum(["deepgram", "openai-realtime"]).default("deepgram"),
   DEEPGRAM_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
-  OPENAI_STT_MODEL: z.string().default("gpt-4o-mini-transcribe"),
+  OPENAI_STT_MODEL: z.string().default("gpt-4o-transcribe"),
   OPENAI_TTS_MODEL: z.string().default("gpt-4o-mini-tts"),
   OPENAI_TTS_VOICE: z.string().default("coral"),
 
   LLM_PROVIDER: z.enum(["openai", "anthropic"]).default("openai"),
-  LLM_MODEL: z.string().default("gpt-4.1-mini"),
+  LLM_MODEL: z.string().default("gpt-5.6-luna"),
+  // Only for reasoning models (gpt-5.x, o-series): "low" keeps voice turns at ≈2–3 s.
+  LLM_REASONING_EFFORT: z.enum(["none", "minimal", "low", "medium", "high"]).default("low"),
   ANTHROPIC_API_KEY: z.string().optional(),
 
   RESEND_API_KEY: z.string().optional(),
