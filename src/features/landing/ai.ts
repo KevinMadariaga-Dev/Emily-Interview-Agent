@@ -143,7 +143,7 @@ ${QUESTION_RULES}
 
 /** "Es todo" / "that's all": the user has nothing more to add (local fallback without the LLM). */
 const isThatAll = (text: string) =>
-  /^\W*(no|nop|nope|nada( más)?|es todo|eso es todo|eso sería todo|ya está|ya es todo|listo|that'?s (all|it)|nothing( else)?|no more|all good|done)\W*(gracias|thanks|thank you)?\W*$/i.test(
+  /^\W*((no|ok(ay)?|s[ií]|yes|yeah)\W+)?(no|nop|nope|nada( más)?|es todo|eso es todo|eso ser[ií]a todo|ya est[aá]|ya es todo|listo|that'?s (all|it|everything)|that would be all|nothing( else| more)?|no more|all good|we'?re (good|done)|i'?m (good|done)|done)\W*(gracias|thanks|thank you)?\W*$/i.test(
     text.trim(),
   );
 

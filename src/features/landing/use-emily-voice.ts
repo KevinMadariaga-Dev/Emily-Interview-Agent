@@ -384,10 +384,7 @@ export function useEmilyVoice({
 
   function listenBrowser(): Promise<string> {
     const Rec = browserRecognition();
-    if (!Rec)
-      throw new Error(
-        "Tu navegador no permite dictado. Usa Chrome o Edge, o escribe tu respuesta.",
-      );
+    if (!Rec) throw new Error("no-dictation"); // explained by micError() in the user's language
     return new Promise((resolve, reject) => {
       const r = new Rec();
       r.lang = locale === "es" ? "es-MX" : "en-US";

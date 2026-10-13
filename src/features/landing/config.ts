@@ -353,14 +353,12 @@ export function isOpen(d: Draft, now = new Date()) {
 /** A spoken confirmation: "sí"/"yes" → yes, "no" → no, anything else → null (treat as a correction). */
 export function answerKind(text: string): "yes" | "no" | null {
   const s = text.trim().toLowerCase();
-  if (
-    /^\W*(s[ií]+|claro|correcto|exacto|as[ií] es|perfecto|ok(ay)?|vale|de acuerdo|est[aá] bien|yes|yeah|yep|correct|right|sure|that'?s right)(?!\p{L})/u.test(
-      s,
-    )
-  )
-    return "yes";
-  if (/^\W*(no|nop|nope|incorrecto|negativo|est[aá] mal|wrong|not really)(?!\p{L})/u.test(s))
-    return "no";
+  const yes =
+    /^\W*(s[ií]+|claro|correcto|exacto|as[ií] es|perfecto|ok(ay)?|vale|de acuerdo|est[aá] bien|yes|yeah|yep|yup|sure|correct|exactly|absolutely|right|that'?s (right|correct|it)|it is|sounds good|looks good)(?!\p{L})/u;
+  const no =
+    /^\W*(no|nop|nope|incorrecto|negativo|est[aá] mal|wrong|not (really|quite|right)|that'?s (wrong|not right))(?!\p{L})/u;
+  if (yes.test(s)) return "yes";
+  if (no.test(s)) return "no";
   return null;
 }
 

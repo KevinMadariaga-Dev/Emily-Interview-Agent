@@ -67,3 +67,44 @@ describe("sentence splitting for Emily's voice", () => {
     expect(splitSentences("Sin punto final")).toEqual(["Sin punto final"]);
   });
 });
+
+describe("English voice setup phrases", () => {
+  it("understands English yes / no / corrections", async () => {
+    const { answerKind } = await import("@/features/landing/config");
+    for (const s of [
+      "Yes",
+      "Yeah, that's right",
+      "That's correct",
+      "Sure",
+      "Exactly",
+      "Yep",
+      "Looks good",
+    ])
+      expect(answerKind(s), s).toBe("yes");
+    for (const s of ["No", "Nope", "Not quite", "That's wrong", "No, the project is Blue Harbor"])
+      expect(answerKind(s), s).toBe("no");
+    for (const s of ["The project is called Blue Harbor", "Eso es incorrecto"])
+      expect(answerKind(s), s).not.toBe("yes");
+  });
+
+  it("closes on English 'that's all' variants (local fallback), not on new requests", async () => {
+    const en = normalizeDraft({
+      project: "Blue",
+      objective: "Learn how they sell",
+      questions: ["Do you have a website?"],
+      locale: "en",
+    });
+    for (const said of [
+      "That's all",
+      "That's it, thanks!",
+      "No, that's all",
+      "Nothing else",
+      "I'm done",
+      "We're good",
+      "That's everything",
+    ])
+      expect((await fillFromSpeech(said, en)).done, said).toBe(true);
+    for (const said of ["No, also ask about prices", "Add one about shipping"])
+      expect((await fillFromSpeech(said, en)).done, said).toBe(false);
+  });
+});

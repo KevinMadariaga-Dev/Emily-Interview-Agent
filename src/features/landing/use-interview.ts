@@ -16,7 +16,7 @@ import {
   type ReportStatus,
 } from "./report";
 import { saveResult } from "./store";
-import { micError } from "./ui";
+import { friendlyError, micError } from "./ui";
 import { useEmilyVoice } from "./use-emily-voice";
 import type { OrbMode } from "./voice-orb";
 
@@ -84,7 +84,14 @@ export function useInterviewSession({
       const answered = hist.current.some((t) => t.role === "participant");
       if (answered)
         saveResult(slug, result, hist.current.length).catch((err) =>
-          setError(err instanceof Error ? err.message : String(err)),
+          setError(
+            friendlyError(
+              err,
+              draft.locale === "es"
+                ? "No pude guardar el resultado."
+                : "I couldn't save the result.",
+            ),
+          ),
         );
       // Email the report (Gmail/Resend) to the Emily's report address; never blocks the ending.
       // Same report into Notion (skipped server-side when Notion isn't configured).
@@ -101,7 +108,12 @@ export function useInterviewSession({
           .catch(() => setReport({ sent: false, reason: "failed" }));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No pude generar el resumen.");
+      setError(
+        friendlyError(
+          err,
+          draft.locale === "es" ? "No pude generar el resumen." : "I couldn't create the summary.",
+        ),
+      );
     } finally {
       setPhase("done");
       onMode("listening");
@@ -149,7 +161,7 @@ export function useInterviewSession({
           ? draft.locale === "es"
             ? "Emily tardó demasiado en responder. Revisa tu conexión y vuelve a intentarlo."
             : "Emily took too long to answer. Check your connection and try again."
-          : micError(err),
+          : micError(err, draft.locale),
       );
       onMode("listening");
     }

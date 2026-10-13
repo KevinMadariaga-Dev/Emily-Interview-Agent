@@ -13,11 +13,39 @@ export const primary =
 export const quiet =
   "inline-flex items-center justify-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm font-medium transition-[scale,color,border-color] duration-160 ease-out hover:border-accent/40 hover:text-accent active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40";
 
-export function micError(err: unknown) {
+const MIC_ERRORS = {
+  es: {
+    denied:
+      "Necesito permiso para usar tu micrófono (ícono del candado en la barra de direcciones).",
+    noDictation: "Tu navegador no permite dictado. Usa Chrome o Edge, o escribe tu respuesta.",
+    generic: "No pude abrir el micrófono.",
+  },
+  en: {
+    denied: "I need permission to use your microphone (padlock icon in the address bar).",
+    noDictation: "Your browser doesn't support dictation. Use Chrome or Edge, or type your answer.",
+    generic: "I couldn't open the microphone.",
+  },
+} as const;
+
+/**
+ * Error text fit for the user. Server-action failures reach the browser as React's generic
+ * production message ("Minified React error #441…"): show the friendly fallback instead.
+ */
+export function friendlyError(err: unknown, fallback: string) {
+  const msg = err instanceof Error ? err.message : "";
+  return !msg ||
+    /react\.dev\/errors|digest|Server Components render|omitted in production/i.test(msg)
+    ? fallback
+    : msg;
+}
+
+/** A microphone problem explained in the conversation's language. */
+export function micError(err: unknown, lang: "es" | "en" = "es") {
+  const m = MIC_ERRORS[lang];
   const name = err instanceof Error ? err.name || err.message : "";
-  if (name === "NotAllowedError" || String(err).includes("NotAllowedError"))
-    return "Necesito permiso para usar tu micrófono (ícono del candado en la barra de direcciones).";
-  return err instanceof Error ? err.message : "No pude abrir el micrófono.";
+  if (name === "NotAllowedError" || String(err).includes("NotAllowedError")) return m.denied;
+  if (name === "no-dictation") return m.noDictation;
+  return friendlyError(err, m.generic);
 }
 
 export function IconBtn({

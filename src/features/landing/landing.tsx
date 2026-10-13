@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { DOMAIN } from "@/features/demo/mock";
 import {
   aiStatus,
@@ -41,7 +42,16 @@ import {
   StopIcon,
   XIcon,
 } from "./icons";
-import { BubbleTrail, field, IconBtn, micError, primary, quiet, type Msg } from "./ui";
+import {
+  BubbleTrail,
+  field,
+  friendlyError,
+  IconBtn,
+  micError,
+  primary,
+  quiet,
+  type Msg,
+} from "./ui";
 import { EmilyList, ResultsList } from "./saved-views";
 import { saveEmily, useSavedEmilys } from "./store";
 import { useEmilyVoice } from "./use-emily-voice";
@@ -146,7 +156,10 @@ export function Landing() {
         {/* Violet field: Emily lives here. Fixed half-screen layer; "narrowing" is a clip-path, so
           nothing reflows while it moves. Emily's group slides with a transform to stay centered. */}
         <aside
-          className={`bg-accent-deep relative flex flex-col overflow-hidden px-8 py-8 text-white motion-reduce:transition-none md:fixed md:inset-y-0 md:left-0 md:z-10 md:w-1/2 md:transition-[clip-path] md:duration-500 md:ease-in-out ${
+          className={`bg-accent-deep relative flex-col overflow-hidden px-8 py-8 text-white motion-reduce:transition-none ${
+            // Phones: Emily's big panel only on the home screen; setup/lists get the whole screen.
+            wide ? "hidden md:flex" : "flex"
+          } md:fixed md:inset-y-0 md:left-0 md:z-10 md:w-1/2 md:transition-[clip-path] md:duration-500 md:ease-in-out ${
             panel
               ? "md:[clip-path:inset(0_calc(100%_-_var(--panel))_0_0)]"
               : "md:delay-100 md:[clip-path:inset(0)]"
@@ -429,7 +442,7 @@ function ConfigureForm({
       if (r.questions?.length) applyPatch({ questions: r.questions });
       setRefineNote(auto ? `${t.proposed} ${r.note}` : r.note);
     } catch (err) {
-      if (!auto) setRefineNote(err instanceof Error ? err.message : t.noQs);
+      if (!auto) setRefineNote(friendlyError(err, t.noQs));
     } finally {
       setRefining(false);
     }
@@ -918,7 +931,8 @@ function ConfigureForm({
         </div>
       </div>
 
-      <div className="border-border bg-background/85 sticky bottom-0 -mx-2 flex flex-wrap items-center justify-between gap-4 border-t px-2 py-5 backdrop-blur">
+      {/* Sticky on larger screens; on phones it sits at the end of the form (doesn't cover fields) */}
+      <div className="border-border bg-background/85 -mx-2 flex flex-wrap items-center justify-between gap-4 border-t px-2 py-5 backdrop-blur md:sticky md:bottom-0">
         <p className="text-muted text-sm tabular-nums">
           {t.nQuestions(filled.length)} · {t.nAreas(d.areas.length)} · {t.langName}
           {missingFields(draft).length > 0 &&
@@ -1159,7 +1173,7 @@ function VoiceStudio({
       }
       await handle(text);
     } catch (err) {
-      setError(micError(err));
+      setError(micError(err, draftRef.current.locale));
     }
   }
 
@@ -1185,7 +1199,7 @@ function VoiceStudio({
       return complete ? finish() : ask(reply);
     } catch (err) {
       setThinking(false);
-      setError(err instanceof Error ? err.message : t.somethingFailed);
+      setError(friendlyError(err, t.somethingFailed));
     }
   }
 
@@ -1200,7 +1214,11 @@ function VoiceStudio({
       await confirm(`${lastSaid.current} ${more}`.trim(), {});
     } catch (err) {
       setThinking(false);
-      setError(err instanceof Error ? micError(err) : t.somethingFailed);
+      setError(
+        err instanceof Error && err.name === "NotAllowedError"
+          ? micError(err, draftRef.current.locale)
+          : friendlyError(err, t.somethingFailed),
+      );
     }
   }
 
@@ -1272,12 +1290,14 @@ function VoiceStudio({
             : "";
   const shown = msgs.slice(-4);
 
-  return (
+  // Portal to <body>: an animated (transformed) ancestor would otherwise turn "fixed" into
+  // "inside that box" — on phones the studio didn't cover the screen.
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label={t.voiceTitle}
-      className="bg-accent-deep fixed inset-0 z-50 flex flex-col overflow-hidden px-6 py-6 text-white transition-opacity duration-300 ease-out md:px-10 starting:opacity-0"
+      className="bg-accent-deep fixed inset-0 z-50 flex h-dvh flex-col overflow-hidden px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] text-white transition-opacity duration-300 ease-out sm:px-6 md:px-10 starting:opacity-0"
     >
       <header className="flex items-center justify-between gap-4">
         <p className="text-sm font-semibold tracking-[0.3em] uppercase">
@@ -1294,13 +1314,14 @@ function VoiceStudio({
       </header>
 
       <main
-        className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-6 ${
+        className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-4 sm:gap-6 ${
           phase === "pick" ? "" : "md:flex-row md:gap-16 lg:gap-24"
         }`}
       >
         {/* Emily (left while talking, centered while picking the language) */}
         <div className="flex shrink-0 flex-col items-center gap-6">
-          <div className="md:scale-125">
+          {/* Smaller orb on phones (negative margin keeps its layout box tight) */}
+          <div className="-my-7 scale-[0.72] sm:my-0 sm:scale-100 md:scale-125">
             <VoiceOrb mode={phase === "talk" ? mode : "listening"} />
           </div>
           {phase !== "pick" && (
@@ -1371,7 +1392,7 @@ function VoiceStudio({
             {/* The conversation, right of Emily: last lines only, older ones fade — no scroll. */}
             <ol
               aria-live="polite"
-              className="flex h-56 w-full flex-col justify-end gap-2.5 overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_35%)] md:h-[22rem]"
+              className="flex h-[min(14rem,30dvh)] w-full flex-col justify-end gap-2.5 overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_35%)] md:h-[22rem]"
             >
               {transcript &&
                 shown.map((m, i) => (
@@ -1413,7 +1434,7 @@ function VoiceStudio({
       {/* Controls centered at the bottom of the screen */}
       {phase === "talk" && (
         <footer className="flex flex-col items-center gap-3 pt-4 pb-2">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={recording ? voice.stop : () => void listenTurn()}
@@ -1480,7 +1501,8 @@ function VoiceStudio({
           saveError={saveError}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1501,7 +1523,7 @@ const emptyDraft = (locale: Lang): Omit<Draft, "questions"> => ({
 /** Leaving the voice studio: delete the setup progress, or keep going. */
 function ExitAlert({ onDiscard, onContinue }: { onDiscard: () => void; onContinue: () => void }) {
   const { t } = useLang();
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[70] grid place-items-center bg-black/55 p-4 backdrop-blur-sm transition-opacity duration-200 ease-out starting:opacity-0">
       <section
         role="alertdialog"
@@ -1531,7 +1553,8 @@ function ExitAlert({ onDiscard, onContinue }: { onDiscard: () => void; onContinu
           </button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1685,7 +1708,7 @@ function PresetPicker({ locale, onPatch }: { locale: "es" | "en"; onPatch: (p: P
     try {
       onPatch((await generateFromPreset(chosen, context, locale)).patch);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t.presetError);
+      setError(friendlyError(err, t.presetError));
     } finally {
       setLoading(false);
     }
