@@ -59,12 +59,12 @@ pnpm dev                     # http://localhost:3000
 
 All variables are documented in [`.env.example`](.env.example). Minimum per feature:
 
-| Feature     | Variables                                                                      |
-| ----------- | ------------------------------------------------------------------------------ |
-| App + DB    | `DATABASE_URL`, `NEXT_PUBLIC_APP_URL`, `SITE_PASSWORD` (required in prod)      |
-| Voice + LLM | `OPENAI_API_KEY` (models: `OPENAI_STT_MODEL`, `OPENAI_TTS_MODEL`, `LLM_MODEL`) |
-| Email       | `GMAIL_USER`, `GMAIL_APP_PASSWORD` (optional `REPORT_EMAIL_ALLOWLIST`)         |
-| Notion      | `NOTION_API_KEY`, `NOTION_DATA_SOURCE_ID` (`pnpm notion:setup` creates it)     |
+| Feature     | Variables                                                                             |
+| ----------- | ------------------------------------------------------------------------------------- |
+| App + DB    | `DATABASE_URL`, `NEXT_PUBLIC_APP_URL`, `SITE_PASSWORD` (optional: empty = admin open) |
+| Voice + LLM | `OPENAI_API_KEY` (models: `OPENAI_STT_MODEL`, `OPENAI_TTS_MODEL`, `LLM_MODEL`)        |
+| Email       | `GMAIL_USER`, `GMAIL_APP_PASSWORD` (optional `REPORT_EMAIL_ALLOWLIST`)                |
+| Notion      | `NOTION_API_KEY`, `NOTION_DATA_SOURCE_ID` (`pnpm notion:setup` creates it)            |
 
 ## Scripts
 
@@ -117,9 +117,10 @@ tests/unit/                   # Vitest
    password (`?` → `%3F`, `@` → `%40`). Run `pnpm db:migrate` against it. Migrations enable RLS on
    every table, so Supabase's public REST API can't read them; the app connects as the table
    owner through `DATABASE_URL` (no Supabase client keys needed).
-2. **Server:** set the env vars from `.env.example`. `SITE_PASSWORD` is required in production:
-   it protects "Mis Emilys", results and creation (checked in the proxy **and** inside each admin
-   server action). Participants open `/e/<slug>` without it. Use a long random value.
+2. **Server:** set the env vars from `.env.example`. `SITE_PASSWORD`:
+   when set, it protects "Mis Emilys", results and creation (checked in the proxy **and** inside each admin
+   server action). Participants open `/e/<slug>` without it. Optional: without it the admin side
+   is open to anyone with the URL (Emilys readable/deletable, OpenAI key usable).
 3. **Notion:** share the database with the integration.
 
 `next.config.ts` uses `output: "standalone"`, so the app runs as a plain Node server (Docker or

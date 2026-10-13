@@ -37,10 +37,10 @@ describe("requireAdmin", { timeout: 30_000 }, () => {
     await expect((await load())()).resolves.toBeUndefined();
   });
 
-  it("blocks production when SITE_PASSWORD is missing", async () => {
+  it("is open in production too when SITE_PASSWORD isn't set (owner's choice)", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("SITE_PASSWORD", "");
-    await expect((await load())()).rejects.toThrow("SITE_PASSWORD");
+    await expect((await load())()).resolves.toBeUndefined();
   });
 
   it("checks the request's password when set", async () => {

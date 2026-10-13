@@ -12,8 +12,8 @@ const serverSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.url().default("http://localhost:3000"),
   // Postgres (Supabase): Emilys and their results. Required to save or open Emilys.
   DATABASE_URL: z.string().optional(), // "" = not configured (requireEnv rejects it)
-  // Admin password (HTTP Basic) — required in production, see src/server/auth/admin.ts.
-  SITE_PASSWORD: z.string().optional(), // "" = no password (local only)
+  // Optional admin password (HTTP Basic), see src/server/auth/admin.ts. Empty = admin side open.
+  SITE_PASSWORD: z.string().optional(), // "" = no password
 
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_STT_MODEL: z.string().default("gpt-4o-transcribe"),
