@@ -1,5 +1,5 @@
 import { index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
-import type { Draft, InterviewSummary } from "@/features/landing/config";
+import type { Draft, InterviewSummary, Transcript } from "@/features/landing/config";
 import { localeEnum } from "./enums";
 
 type Lang = Draft["locale"];
@@ -29,6 +29,8 @@ export const emilyResults = pgTable(
     project: text("project").notNull(),
     summary: jsonb("summary").$type<InterviewSummary>().notNull(),
     turns: integer("turns").notNull(),
+    /** The whole conversation (who said what, and which question each answer was for). */
+    transcript: jsonb("transcript").$type<Transcript>().notNull().default([]),
     locale: localeEnum("locale").notNull(),
     translations: jsonb("translations")
       .$type<Partial<Record<Lang, InterviewSummary>>>()

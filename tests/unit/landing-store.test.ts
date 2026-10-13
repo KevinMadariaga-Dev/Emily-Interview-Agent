@@ -71,8 +71,12 @@ describe("landing store (database-backed)", () => {
   });
 
   it("saves a result by slug only (project and language are the server's)", async () => {
-    await store.saveResult("boutique-luna", summary, 4);
-    expect(actions.saveInterviewResult).toHaveBeenCalledWith("boutique-luna", summary, 4);
+    const history = [
+      { role: "emily" as const, text: "¿Tienen web?" },
+      { role: "participant" as const, text: "Sí", q: 0 },
+    ];
+    await store.saveResult("boutique-luna", summary, history);
+    expect(actions.saveInterviewResult).toHaveBeenCalledWith("boutique-luna", summary, history);
   });
 
   it("caches translations on the server by id / slug", async () => {

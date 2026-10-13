@@ -121,6 +121,9 @@ const strings = {
     vsDiscardBody: "Se borrará todo lo que Emily anotó y la configuración quedará limpia.",
     vsDiscardYes: "Sí, borrar",
     vsContinue: "Continuar",
+    pause: "Pausar",
+    resume: "Continuar",
+    pausedNow: "En pausa · pulsa Continuar cuando quieras",
     vsMore: "¿Quieres decir algo más?",
     vsNoted: (s: string) => `Anoté lo siguiente: ${s}. ¿Es correcto?`,
     vsFix: "¿Qué quieres corregir?",
@@ -144,7 +147,7 @@ const strings = {
     capAreas: (n: number) => `${n} áreas`,
     capExpiry: "Caducidad",
     capReport: "Correo de resultados",
-    stRecording: "Te escucho… habla con naturalidad, envío cuando hagas una pausa.",
+    stRecording: "Te escucho… habla con naturalidad; cuando dejes de hablar unos segundos, sigo.",
     stTranscribing: "Entendiendo lo que dijiste…",
     stFilling: "Llenando los campos…",
     stSpeaking: "Emily está hablando…",
@@ -157,7 +160,7 @@ const strings = {
     copied: "Copiado",
     copy: "Copiar",
     domainNote: (url: string) =>
-      `Con dominio propio será ${url}. Por ahora el link abre en este navegador (aún no hay base de datos).`,
+      `Comparte este link: ${url}. Se abre en cualquier dispositivo, sin contraseña.`,
     factFor: "Para",
     factQuestions: "Preguntas",
     factAreas: "Áreas de seguimiento",
@@ -278,6 +281,8 @@ const strings = {
     nCompleted: (n: number) =>
       `${n} ${n === 1 ? "entrevista completada" : "entrevistas completadas"}.`,
     seeDetail: "Ver detalle",
+    convTitle: (n: number) => `Conversación completa · ${n} mensajes`,
+    convParticipant: "Participante",
     importTitle: (n: number) =>
       `Este navegador tiene ${n} ${n === 1 ? "Emily guardada" : "Emilys guardadas"} de antes de la base de datos.`,
     importBody:
@@ -400,6 +405,9 @@ const strings = {
     vsDiscardBody: "Everything Emily noted will be deleted and the setup will start clean.",
     vsDiscardYes: "Yes, delete",
     vsContinue: "Continue",
+    pause: "Pause",
+    resume: "Resume",
+    pausedNow: "Paused · press Resume whenever you're ready",
     vsMore: "Would you like to add something?",
     vsNoted: (s: string) => `Here's what I noted: ${s}. Is that right?`,
     vsFix: "What would you like to change?",
@@ -422,7 +430,7 @@ const strings = {
     capAreas: (n: number) => `${n} areas`,
     capExpiry: "Expiration",
     capReport: "Results email",
-    stRecording: "I'm listening… talk naturally, I'll send when you pause.",
+    stRecording: "I'm listening… talk naturally; when you stop for a few seconds, I'll go on.",
     stTranscribing: "Understanding what you said…",
     stFilling: "Filling in the fields…",
     stSpeaking: "Emily is speaking…",
@@ -434,7 +442,7 @@ const strings = {
     copied: "Copied",
     copy: "Copy",
     domainNote: (url: string) =>
-      `With your own domain it will be ${url}. For now the link opens in this browser (no database yet).`,
+      `Share this link: ${url}. It opens on any device, no password needed.`,
     factFor: "For",
     factQuestions: "Questions",
     factAreas: "Follow-up areas",
@@ -548,6 +556,8 @@ const strings = {
     results: "Results",
     nCompleted: (n: number) => `${n} ${n === 1 ? "interview completed" : "interviews completed"}.`,
     seeDetail: "See details",
+    convTitle: (n: number) => `Full conversation · ${n} messages`,
+    convParticipant: "Participant",
     importTitle: (n: number) =>
       `This browser has ${n} ${n === 1 ? "Emily" : "Emilys"} saved from before the database.`,
     importBody: "Import them to see them on any device and make their links work for everyone.",

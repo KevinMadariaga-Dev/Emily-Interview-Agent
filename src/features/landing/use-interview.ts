@@ -57,6 +57,20 @@ export function useInterviewSession({
   const alive = useRef(true);
   const ending = useRef(false);
   const pendingTyped = useRef(""); // a typed answer replaces the recording in progress
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  const resumeRef = useRef<(() => void) | null>(null); // resolves the wait while paused
+  const waitResume = () => new Promise<void>((r) => (resumeRef.current = r));
+  const live = () => alive.current && !ending.current;
+
+  /** Emily's line. If paused before or during it, she waits and then says it again. */
+  async function sayLine(text: string) {
+    do {
+      if (pausedRef.current) await waitResume();
+      if (!live()) return;
+      await voice.say(text);
+    } while (pausedRef.current && live());
+  }
 
   useEffect(() => {
     alive.current = true;
@@ -73,7 +87,24 @@ export function useInterviewSession({
     setHistory(hist.current);
   };
 
+  /** Pauses the conversation: Emily stops talking/listening until `resume()`. */
+  function pause() {
+    if (phase !== "live" || pausedRef.current) return;
+    pausedRef.current = true;
+    setPaused(true);
+    voice.cancel();
+    onMode("listening");
+  }
+
+  function resume() {
+    pausedRef.current = false;
+    setPaused(false);
+    resumeRef.current?.();
+    resumeRef.current = null;
+  }
+
   async function finish() {
+    if (pausedRef.current) resume();
     ending.current = true;
     voice.cancel();
     setPhase("summarizing");
@@ -83,7 +114,7 @@ export function useInterviewSession({
       setSummary(result);
       const answered = hist.current.some((t) => t.role === "participant");
       if (answered)
-        saveResult(slug, result, hist.current.length).catch((err) =>
+        saveResult(slug, result, hist.current).catch((err) =>
           setError(
             friendlyError(
               err,
@@ -132,7 +163,7 @@ export function useInterviewSession({
         setCovered(next.covered);
         setAsking(next.asking);
         push({ role: "emily", text: next.say });
-        await voice.say(next.say);
+        await sayLine(next.say);
         if (next.done) return void (await finish());
         if (next.asking < 0) continue; // presentation: no answer expected, go to question 1
 
@@ -142,6 +173,11 @@ export function useInterviewSession({
           if (pendingTyped.current) {
             answer = pendingTyped.current;
             pendingTyped.current = "";
+          }
+          if (pausedRef.current) {
+            answer = ""; // paused while answering: after "Resume" she repeats the question
+            await sayLine(next.say);
+            continue;
           }
           if (!answer && !ending.current) {
             if (++silences > 2) return void (await finish());
@@ -185,12 +221,15 @@ export function useInterviewSession({
     setReport(null);
     setNotion(null);
     setError("");
+    pausedRef.current = false;
+    setPaused(false);
     setPhase("ready");
   }
 
   function stopAll() {
     alive.current = false;
     voice.cancel();
+    resumeRef.current?.(); // free a loop waiting on "Resume"
   }
 
   return {
@@ -204,6 +243,9 @@ export function useInterviewSession({
     notion,
     error,
     voice,
+    paused,
+    pause,
+    resume,
     run,
     finish,
     answerTyped,

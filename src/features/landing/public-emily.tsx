@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { Draft } from "./config";
 import { dict } from "./i18n";
-import { MicIcon, SendIcon, StopIcon } from "./icons";
+import { MicIcon, PauseIcon, PlayIcon, SendIcon, StopIcon } from "./icons";
 import { useInterviewSession } from "./use-interview";
 import { VoiceOrb, type OrbMode } from "./voice-orb";
 
@@ -65,13 +65,15 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
       ? t.pReady
       : phase === "summarizing"
         ? t.pSaving
-        : voice.state === "speaking"
-          ? t.speaking
-          : recording
-            ? t.pListening
-            : voice.state === "transcribing"
-              ? t.pUnderstanding
-              : t.pThinking;
+        : s.paused
+          ? t.pausedNow
+          : voice.state === "speaking"
+            ? t.speaking
+            : recording
+              ? t.pListening
+              : voice.state === "transcribing"
+                ? t.pUnderstanding
+                : t.pThinking;
   const tone =
     voice.state === "speaking" || phase === "summarizing"
       ? "bg-fuchsia-300"
@@ -187,7 +189,7 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
 
           {phase === "live" && (
             <div className="flex flex-col items-center gap-4">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center justify-center gap-3">
                 <button
                   onClick={voice.stop}
                   disabled={!recording}
@@ -197,6 +199,14 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
                   }`}
                 >
                   {recording ? <StopIcon /> : <MicIcon />}
+                </button>
+                <button
+                  className={ghost}
+                  onClick={s.paused ? s.resume : s.pause}
+                  aria-pressed={s.paused}
+                >
+                  {s.paused ? <PlayIcon className="h-4 w-4" /> : <PauseIcon className="h-4 w-4" />}
+                  {s.paused ? t.resume : t.pause}
                 </button>
                 <button className={ghost} onClick={() => setTyping((t) => !t)}>
                   {typing ? t.pHideKb : t.pTypeAnswer}

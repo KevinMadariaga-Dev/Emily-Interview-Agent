@@ -69,6 +69,7 @@ a {
   --animate-wave: wave 3.2s var(--ease-out) infinite;
   --animate-breathe: breathe 4s var(--ease-in-out) infinite;
   --animate-fill-flash: fill-flash 1.2s var(--ease-out);
+  --animate-fade: fade 0.25s var(--ease-out) both;
   @keyframes rise {
     from {
       opacity: 0;

@@ -5,7 +5,16 @@ import type { InterviewSummary } from "./ai";
 import type { NotionStatus, ReportStatus } from "./report";
 import { coverage, verdict, type AnswerStatus, type Draft, type QuestionKind } from "./config";
 import { LangProvider, useLang } from "./i18n";
-import { CheckIcon, MicIcon, SendIcon, SparkIcon, StopIcon, XIcon } from "./icons";
+import {
+  CheckIcon,
+  MicIcon,
+  PauseIcon,
+  PlayIcon,
+  SendIcon,
+  SparkIcon,
+  StopIcon,
+  XIcon,
+} from "./icons";
 import { field, IconBtn, primary, quiet, type Msg } from "./ui";
 import { useInterviewSession } from "./use-interview";
 import type { OrbMode } from "./voice-orb";
@@ -44,6 +53,9 @@ export function InterviewLive({
     notion,
     error,
     voice,
+    paused,
+    pause,
+    resume,
     run,
     finish,
     answerTyped,
@@ -156,13 +168,15 @@ export function InterviewLive({
               <div className="space-y-3">
                 <p className="text-muted flex h-5 items-center gap-2 text-sm">
                   {recording && <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />}
-                  {recording
-                    ? t.lRecording
-                    : voice.state === "transcribing"
-                      ? t.pUnderstanding
-                      : voice.state === "speaking"
-                        ? `${t.speaking}…`
-                        : t.lThinking}
+                  {paused
+                    ? t.pausedNow
+                    : recording
+                      ? t.lRecording
+                      : voice.state === "transcribing"
+                        ? t.pUnderstanding
+                        : voice.state === "speaking"
+                          ? `${t.speaking}…`
+                          : t.lThinking}
                 </p>
                 <div className="flex items-center gap-2">
                   <button
@@ -196,6 +210,14 @@ export function InterviewLive({
                   >
                     <SendIcon className="h-4 w-4" />
                   </IconBtn>
+                  <button
+                    className={`${quiet} shrink-0`}
+                    onClick={paused ? resume : pause}
+                    aria-pressed={paused}
+                  >
+                    {paused ? <PlayIcon className="h-4 w-4" /> : <PauseIcon className="h-4 w-4" />}
+                    {paused ? t.resume : t.pause}
+                  </button>
                   <button className={`${quiet} shrink-0`} onClick={() => void finish()}>
                     {t.finish}
                   </button>

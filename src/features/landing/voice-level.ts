@@ -37,3 +37,45 @@ export function meter(analyser: AnalyserNode, onFrame?: (level: number) => void,
     if (publish) publishLevel(0);
   };
 }
+
+/**
+ * End-of-turn detector. Feed it the mic level each frame: it learns the room's ambient level for
+ * `calibrateMs`, then counts as voice anything above max(minSpeech, ambient × speechX). Once the
+ * user has talked for at least `minSpeechMs`, `silenceMs` without voice ends the turn — background
+ * noise below the voice level counts as quiet, so a noisy room still ends the turn.
+ */
+export function turnDetector({
+  calibrateMs = 350,
+  minSpeech = 0.08,
+  speechX = 2.5,
+  silenceMs = 3_000,
+  minSpeechMs = 250,
+} = {}) {
+  let t0 = -1;
+  let prev = 0;
+  let lastVoice = 0;
+  let spokeMs = 0;
+  let speech = minSpeech;
+  const ambient: number[] = [];
+  return {
+    /** true when the turn is over (the user talked, then stayed quiet for silenceMs). */
+    frame(level: number, now: number) {
+      if (t0 < 0) t0 = prev = now;
+      const dt = now - prev;
+      prev = now;
+      if (now - t0 < calibrateMs) {
+        ambient.push(level);
+        // Someone already talking while we calibrate shouldn't raise the bar: cap the floor.
+        const floor = Math.min(ambient.reduce((a, b) => a + b, 0) / ambient.length, 0.08);
+        speech = Math.max(minSpeech, floor * speechX);
+      }
+      if (level > speech) {
+        spokeMs += dt;
+        lastVoice = now;
+      }
+      return spokeMs >= minSpeechMs && now - lastVoice > silenceMs;
+    },
+    /** Whether enough voice was heard to count as an answer. */
+    spoke: () => spokeMs >= minSpeechMs,
+  };
+}

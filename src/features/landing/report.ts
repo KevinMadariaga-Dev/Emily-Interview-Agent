@@ -9,7 +9,7 @@ import { logger } from "@/lib/logger";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import type { InterviewSummary, Turn } from "./ai";
 import { emilyRepository } from "@/server/repositories/emily.repository";
-import { normalizeDraft, summarySchema } from "./config";
+import { normalizeDraft, summarySchema, transcriptSchema } from "./config";
 import { renderInterviewEmail } from "./report-email";
 import { NOTION_BATCH, toNotionInterviewPage } from "./report-notion";
 
@@ -19,16 +19,6 @@ export type ReportStatus =
       sent: false;
       reason: "no_recipient" | "not_configured" | "not_allowed" | "rate_limited" | "failed";
     };
-
-const historySchema = z
-  .array(
-    z.object({
-      role: z.enum(["emily", "participant"]),
-      text: z.string().max(4000),
-      q: z.number().int().optional(),
-    }),
-  )
-  .max(200);
 
 /**
  * The report's inputs: the Emily is loaded from the database by slug (so the recipient and
@@ -40,7 +30,7 @@ async function reportInput(slug: string, summary: InterviewSummary, history: Tur
   return {
     draft: normalizeDraft(emily.draft),
     summary: summarySchema.parse(summary),
-    history: historySchema.parse(history).slice(0, 80) as Turn[],
+    history: transcriptSchema.parse(history).slice(0, 80) as Turn[],
   };
 }
 

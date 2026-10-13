@@ -16,14 +16,23 @@ export const quiet =
 const MIC_ERRORS = {
   es: {
     denied:
-      "Necesito permiso para usar tu micrófono (ícono del candado en la barra de direcciones).",
+      "Necesito permiso para usar tu micrófono: actívalo en el ícono del candado de la barra de direcciones (en iPhone: Ajustes → Safari → Micrófono).",
     noDictation: "Tu navegador no permite dictado. Usa Chrome o Edge, o escribe tu respuesta.",
-    generic: "No pude abrir el micrófono.",
+    unavailable:
+      "Este navegador no da acceso al micrófono. Abre el link en Safari o Chrome (no dentro de WhatsApp o Instagram), o escribe tu respuesta.",
+    notFound: "No encontré ningún micrófono. Conecta uno o revisa la configuración de audio.",
+    busy: "El micrófono está en uso por otra app (llamada, Zoom, Meet…). Ciérrala y vuelve a intentar.",
+    generic: "No pude abrir el micrófono. Revisa el permiso o escribe tu respuesta.",
   },
   en: {
-    denied: "I need permission to use your microphone (padlock icon in the address bar).",
+    denied:
+      "I need permission to use your microphone: allow it from the padlock icon in the address bar (on iPhone: Settings → Safari → Microphone).",
     noDictation: "Your browser doesn't support dictation. Use Chrome or Edge, or type your answer.",
-    generic: "I couldn't open the microphone.",
+    unavailable:
+      "This browser doesn't give access to the microphone. Open the link in Safari or Chrome (not inside WhatsApp or Instagram), or type your answer.",
+    notFound: "I couldn't find a microphone. Connect one or check your audio settings.",
+    busy: "The microphone is being used by another app (a call, Zoom, Meet…). Close it and try again.",
+    generic: "I couldn't open the microphone. Check the permission or type your answer.",
   },
 } as const;
 
@@ -42,9 +51,13 @@ export function friendlyError(err: unknown, fallback: string) {
 /** A microphone problem explained in the conversation's language. */
 export function micError(err: unknown, lang: "es" | "en" = "es") {
   const m = MIC_ERRORS[lang];
-  const name = err instanceof Error ? err.name || err.message : "";
-  if (name === "NotAllowedError" || String(err).includes("NotAllowedError")) return m.denied;
-  if (name === "no-dictation") return m.noDictation;
+  // Browsers report the cause in the name (DOMException) or in the message (ours): check both.
+  const id = err instanceof Error ? `${err.name} ${err.message}` : String(err);
+  if (/NotAllowedError|SecurityError|PermissionDenied/.test(id)) return m.denied;
+  if (/no-dictation/.test(id)) return m.noDictation;
+  if (/mic-unavailable|getUserMedia|mediaDevices/.test(id)) return m.unavailable;
+  if (/NotFoundError|DevicesNotFound|OverconstrainedError/.test(id)) return m.notFound;
+  if (/NotReadableError|TrackStartError|AbortError|audio source/i.test(id)) return m.busy;
   return friendlyError(err, m.generic);
 }
 
@@ -76,13 +89,10 @@ export function IconBtn({
  * Compact conversation trail for Emily's side panel: one bubble glyph per message (Emily left,
  * participant right) instead of the full text, which lives in the main chat. The last one pulses.
  */
-export function BubbleTrail({ feed }: { feed: Msg[] }) {
+export function BubbleTrail({ feed, label }: { feed: Msg[]; label: string }) {
   const recent = feed.slice(-8);
   return (
-    <ol
-      aria-label={`${feed.length} mensajes en la conversación`}
-      className="flex w-full max-w-[13rem] flex-col gap-1.5"
-    >
+    <ol aria-label={label} className="flex w-full max-w-[13rem] flex-col gap-1.5">
       {recent.map((m, i) => {
         const last = i === recent.length - 1;
         return (

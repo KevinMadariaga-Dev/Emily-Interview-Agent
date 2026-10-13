@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { translateDraft, translateSummary } from "./ai";
-import { DOMAIN } from "@/features/demo/mock";
-import { coverage, verdict, voices } from "./config";
+import { coverage, LINK_BASE, verdict, voices } from "./config";
 import { ArrowRight, CheckIcon, CopyIcon, MicIcon, PlusIcon, SparkIcon, XIcon } from "./icons";
 import { dict, useLang, type Lang } from "./i18n";
 import { InterviewLive, SuccessReport } from "./interview-live";
@@ -175,7 +174,7 @@ export function EmilyList({
                   ))}
               </ul>
               <p className="text-muted font-mono text-xs">
-                {DOMAIN}/{slug} · {date(createdAt, lang)}
+                {LINK_BASE}/{slug} · {date(createdAt, lang)}
               </p>
               <div className="mt-auto flex flex-wrap gap-2">
                 <button
@@ -386,8 +385,41 @@ function ResultItem({ r: saved, emily }: { r: SavedResult; emily?: SavedEmily })
               </dl>
             </div>
           )}
+          {!!r.transcript?.length && <Conversation turns={r.transcript} />}
         </div>
       </details>
     </li>
+  );
+}
+
+/** The saved conversation, in its original language (collapsed: it can be long). */
+function Conversation({ turns }: { turns: NonNullable<SavedResult["transcript"]> }) {
+  const { t } = useLang();
+  return (
+    <details className="group/conv border-border mt-6 rounded-2xl border">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 font-medium">
+        {t.convTitle(turns.length)}
+        <span className="text-muted text-sm group-open/conv:hidden">{t.seeDetail}</span>
+        <span className="text-muted hidden text-sm group-open/conv:inline">{t.hide}</span>
+      </summary>
+      <ol className="border-border max-h-[28rem] space-y-3 overflow-y-auto border-t px-5 py-4">
+        {turns.map((turn, i) => (
+          <li key={i} className={`flex ${turn.role === "participant" ? "justify-end" : ""}`}>
+            <p
+              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                turn.role === "emily"
+                  ? "bg-accent-soft/70 rounded-tl-sm"
+                  : "bg-accent text-accent-foreground rounded-tr-sm"
+              }`}
+            >
+              <span className="mb-0.5 block text-xs font-semibold opacity-70">
+                {turn.role === "emily" ? "Emily" : t.convParticipant}
+              </span>
+              {turn.text}
+            </p>
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }

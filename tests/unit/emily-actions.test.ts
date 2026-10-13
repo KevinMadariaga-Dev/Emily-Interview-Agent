@@ -14,8 +14,11 @@ const repo = vi.hoisted(() => ({
   setResultTranslation: vi.fn(),
 }));
 const requireAdmin = vi.hoisted(() => vi.fn());
+const translateDraft = vi.hoisted(() => vi.fn());
+vi.mock("@/features/landing/ai", () => ({ translateDraft }));
 vi.mock("@/server/repositories/emily.repository", () => ({ emilyRepository: repo }));
 vi.mock("@/server/auth/admin", () => ({ requireAdmin }));
+vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 const actions = await import("@/features/landing/emilys");
@@ -43,6 +46,36 @@ beforeEach(() => {
 });
 
 describe("Emily server actions", () => {
+  it("saves in one language: mixed content is translated to the Emily's language first", async () => {
+    repo.slugsLike.mockResolvedValue([]);
+    repo.create.mockImplementation(async (v) => v);
+    translateDraft.mockResolvedValue({
+      project: "Blue Harbor",
+      objective: "Learn how they sell online",
+      questions: [{ text: "How do you record your sales?", kind: "abierta" }],
+      areas: [],
+    });
+    await actions.createEmily({
+      project: "Blue Harbor",
+      objective: "Learn how they sell online",
+      locale: "en",
+      questions: [{ text: "¿Cómo registran sus ventas?", kind: "abierta" }],
+    } as never);
+    expect(translateDraft).toHaveBeenCalledWith(expect.anything(), "en");
+    expect(repo.create.mock.calls[0]![0].draft.questions[0].text).toBe(
+      "How do you record your sales?",
+    );
+
+    translateDraft.mockClear();
+    await actions.createEmily({
+      project: "Luna",
+      objective: "Saber cómo venden en línea",
+      locale: "es",
+      questions: ["¿Tienen página web?"],
+    } as never);
+    expect(translateDraft).not.toHaveBeenCalled(); // already one language
+  });
+
   it("every admin action checks the password first", async () => {
     requireAdmin.mockRejectedValue(new Error("No autorizado."));
     await expect(actions.listSaved()).rejects.toThrow("No autorizado.");
@@ -67,7 +100,11 @@ describe("Emily server actions", () => {
 
   it("the public result save uses the saved Emily's project and language", async () => {
     repo.find.mockResolvedValue(saved);
-    await actions.saveInterviewResult("boutique-luna", summary, 6);
+    const history = [
+      { role: "emily" as const, text: "¿Tienen web?" },
+      { role: "participant" as const, text: "Sí, Shopify.", q: 0 },
+    ];
+    await actions.saveInterviewResult("boutique-luna", summary, history);
     expect(requireAdmin).not.toHaveBeenCalled(); // participants have no password
     expect(repo.addResult).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -80,11 +117,16 @@ describe("Emily server actions", () => {
 
   it("rejects results for unknown Emilys, bad slugs and invalid summaries", async () => {
     repo.find.mockResolvedValue(null);
-    await expect(actions.saveInterviewResult("nope", summary, 1)).rejects.toThrow();
-    await expect(actions.saveInterviewResult("../x", summary, 1)).rejects.toThrow();
+    await expect(actions.saveInterviewResult("nope", summary, [])).rejects.toThrow();
+    await expect(actions.saveInterviewResult("../x", summary, [])).rejects.toThrow();
     repo.find.mockResolvedValue(saved);
     await expect(
-      actions.saveInterviewResult("boutique-luna", { summary: 1 } as never, 1),
+      actions.saveInterviewResult("boutique-luna", { summary: 1 } as never, []),
+    ).rejects.toThrow();
+    await expect(
+      actions.saveInterviewResult("boutique-luna", summary, [
+        { role: "hacker", text: "x" },
+      ] as never),
     ).rejects.toThrow();
     expect(repo.addResult).not.toHaveBeenCalled();
   });

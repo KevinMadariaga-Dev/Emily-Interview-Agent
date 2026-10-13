@@ -93,3 +93,8 @@ export const CheckIcon = (p: P) => (
     <path d="m5 12 5 5 9-10" />
   </Icon>
 );
+export const PauseIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M9 5v14M15 5v14" />
+  </Icon>
+);

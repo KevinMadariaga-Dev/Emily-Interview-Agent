@@ -381,3 +381,50 @@ export function splitSentences(text: string, minChars = 90): string[] {
   }
   return out.length ? out : [text.trim()];
 }
+
+/**
+ * How an Emily's link is shown: "<host>/e" (+ "/<slug>"). From NEXT_PUBLIC_APP_URL, inlined at
+ * build time; copying a link always uses the page's real origin.
+ */
+export const LINK_BASE = `${(process.env.NEXT_PUBLIC_APP_URL ?? "https://emily.neoerasystems.com")
+  .replace(/^https?:\/\//, "")
+  .replace(/\/+$/, "")}/e`;
+
+// Rough ES/EN detector for the "never mix languages" rule (no LLM needed). Counts each language's
+// marks and very common words; null when there's too little text to tell.
+const ES_MARKS = /[¿¡ñáéíóú]/g;
+const ES_WORDS =
+  /(?<!\p{L})(que|qué|de|la|el|los|las|por|para|cómo|como|cuál|cuántos|tienen|tiene|usted|su|sus|una|un|con|es|son|hay|le|les|se|en|del|al|y|o|tu|tus|si|cuando|nos|mi|mis|este|esta|sobre|quién|nuestro|nuestra|cuánto|dónde|también)(?!\p{L})/gu;
+const EN_WORDS =
+  /(?<!\p{L})(the|what|how|which|do|does|did|you|your|is|are|was|of|and|with|would|have|has|to|in|for|on|it|an|or|any|they|we|our|my|can|will|that|this|from|about|their|if|when|why|who|where|much|many|learn|currently)(?!\p{L})/gu;
+
+export function detectLang(text: string): "es" | "en" | null {
+  const t = text.toLowerCase();
+  const es = (t.match(ES_MARKS)?.length ?? 0) * 2 + (t.match(ES_WORDS)?.length ?? 0);
+  const en = t.match(EN_WORDS)?.length ?? 0;
+  if (es + en < 2) return null;
+  if (es >= en * 1.5) return "es";
+  if (en >= es * 1.5) return "en";
+  return null;
+}
+
+/** True when some of the Emily's spoken content (goal, questions, areas) is in the other language. */
+export function mixesLanguages(d: Draft) {
+  const texts = [d.objective, ...d.questions.map((q) => q.text), ...d.areas];
+  return texts.some((t) => {
+    const lang = detectLang(t);
+    return lang !== null && lang !== d.locale;
+  });
+}
+
+/** A whole interview conversation, as saved with its result (and sent to email/Notion). */
+export const transcriptSchema = z
+  .array(
+    z.object({
+      role: z.enum(["emily", "participant"]),
+      text: z.string().max(4000),
+      q: z.number().int().optional(), // the required question a participant turn answers
+    }),
+  )
+  .max(200);
+export type Transcript = z.infer<typeof transcriptSchema>;

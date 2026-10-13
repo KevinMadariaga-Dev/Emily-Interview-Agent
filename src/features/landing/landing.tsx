@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { DOMAIN } from "@/features/demo/mock";
 import {
   aiStatus,
   fillFromSpeech,
@@ -12,6 +11,7 @@ import {
   translateDraft,
 } from "./ai";
 import {
+  LINK_BASE,
   answerKind,
   missingFields,
   presets,
@@ -25,6 +25,7 @@ import {
   toSlug,
 } from "./config";
 import { dict, LangProvider, useLang, type Lang, type Strings } from "./i18n";
+import { saveLangCookie } from "./lang-cookie";
 import { InterviewLive } from "./interview-live";
 import {
   ArrowDown,
@@ -35,6 +36,7 @@ import {
   InboxIcon,
   LinkIcon,
   MicIcon,
+  PauseIcon,
   PlayIcon,
   PlusIcon,
   SendIcon,
@@ -75,8 +77,16 @@ const EXIT_MS = 200;
 const proofs = [{ Icon: LinkIcon }, { Icon: MicIcon }, { Icon: InboxIcon }];
 
 /** Home. Closed: violet field with Emily + pitch. Open: field pinned left, setup on the right. */
-export function Landing() {
-  const [lang, setLang] = useState<Lang>("es");
+export function Landing({ initialLang = "es" }: { initialLang?: Lang }) {
+  // Starts in the language the server read from the cookie: no flash on reload.
+  const [lang, setLangState] = useState<Lang>(initialLang);
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l);
+    saveLangCookie(l); // remembered for the next visit (only when the user picks)
+  }, []);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
   const t = dict[lang];
   const [open, setOpen] = useState(false);
   const [created, setCreated] = useState<Created | null>(null);
@@ -90,6 +100,7 @@ export function Landing() {
   const [exiting, setExiting] = useState(false); // content fading out before the view swaps
   const [fromHero, setFromHero] = useState(false); // next entrance waits for the panel
   const rightRef = useRef<HTMLElement>(null);
+  const langHandler = useRef<((l: Lang) => void) | null>(null); // the open form's ES/EN switch
 
   /**
    * Choreography for every view change: the panel starts moving now, the current content fades
@@ -195,7 +206,7 @@ export function Landing() {
               </span>
             </span>
             {feed.length ? (
-              <BubbleTrail feed={feed} />
+              <BubbleTrail feed={feed} label={t.convTitle(feed.length)} />
             ) : (
               <p
                 key={caption}
@@ -214,13 +225,14 @@ export function Landing() {
             wide ? "md:ml-[var(--panel)]" : "md:ml-[50%]"
           }`}
         >
-          <nav className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          {/* Same three slots in every section (brand · tabs · ES/EN): nothing shifts when switching */}
+          <nav className="flex flex-wrap items-center justify-between gap-3 text-sm md:grid md:grid-cols-[1fr_auto_1fr]">
             <span className="font-semibold">Emily</span>
             {wide && (
               <div
                 role="tablist"
                 aria-label={t.sections}
-                className="bg-accent-soft/60 inline-flex rounded-full p-1"
+                className="bg-accent-soft/60 inline-flex rounded-full p-1 md:justify-self-center"
               >
                 {(
                   [
@@ -254,29 +266,36 @@ export function Landing() {
                 ))}
               </div>
             )}
-            {wide && section !== "crear" && (
+            {!wide && <span aria-hidden className="hidden md:block" />}
+            {/* ES/EN on every screen, home included */}
+            <div className="md:justify-self-end">
               <Segmented
                 label={t.language}
                 value={lang}
-                onChange={setLang}
+                // In "Crear" the form also switches Emily's language and translates the draft.
+                onChange={(l) =>
+                  section === "crear" && langHandler.current ? langHandler.current(l) : setLang(l)
+                }
                 options={[
                   ["es", "ES"],
                   ["en", "EN"],
                 ]}
                 compact
               />
-            )}
+            </div>
           </nav>
 
           <div
             key={wide ? section : "hero"}
             className={`flex flex-1 flex-col transition-[opacity,translate] duration-200 ease-out ${
               exiting
-                ? "-translate-y-1.5 opacity-0 motion-reduce:translate-y-0"
+                ? fromHero
+                  ? "-translate-y-1.5 opacity-0 motion-reduce:translate-y-0"
+                  : "opacity-0" // tab switch: fade only, nothing moves
                 : wide
                   ? fromHero
                     ? "animate-slide-in [animation-delay:280ms]"
-                    : "animate-rise"
+                    : "animate-fade"
                   : ""
             }`}
           >
@@ -366,6 +385,7 @@ export function Landing() {
                   />
                 ) : (
                   <ConfigureForm
+                    onLangHandler={(fn) => (langHandler.current = fn)}
                     onCreate={(c) => {
                       setVoiceMode(null);
                       setFeed([]);
@@ -395,9 +415,12 @@ type Assist = "voice" | "preset" | null;
 function ConfigureForm({
   onCreate,
   onClose,
+  onLangHandler,
 }: {
   onCreate: (c: Created) => void;
   onClose: () => void;
+  /** Hands the form's ES/EN switch (UI + Emily's language + translation) to the top bar. */
+  onLangHandler: (fn: ((l: Lang) => void) | null) => void;
 }) {
   const { lang, setLang, t } = useLang();
   const [d, setD] = useState<Omit<Draft, "questions">>(() => emptyDraft(lang));
@@ -525,7 +548,7 @@ function ConfigureForm({
     }
     onCreate({
       slug,
-      url: `${DOMAIN}/${slug}`,
+      url: `${LINK_BASE}/${slug}`,
       project: d.project,
       recipient: [d.recipientName, d.company].filter(Boolean).join(" · ") || t.openLink,
       questions: filled.length,
@@ -547,6 +570,11 @@ function ConfigureForm({
     d.areas.length ||
     filled.length
   );
+
+  useEffect(() => {
+    onLangHandler((l) => void changeLang(l));
+    return () => onLangHandler(null);
+  });
 
   // Esc inside the alert = continue.
   useEffect(() => {
@@ -608,16 +636,6 @@ function ConfigureForm({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Segmented
-            label={t.language}
-            value={lang}
-            onChange={(v) => void changeLang(v)}
-            options={[
-              ["es", "ES"],
-              ["en", "EN"],
-            ]}
-            compact
-          />
           <button
             type="button"
             onClick={() => (hasData ? setConfirmClose(true) : onClose())}
@@ -690,7 +708,7 @@ function ConfigureForm({
               onChange={(e) => set("project", e.target.value)}
             />
             <p className="text-muted mt-2 font-mono text-xs">
-              {DOMAIN}/<span className="text-accent">{toSlug(d.project) || t.projectSlug}</span>
+              {LINK_BASE}/<span className="text-accent">{toSlug(d.project) || t.projectSlug}</span>
             </p>
           </Field>
 
@@ -931,8 +949,8 @@ function ConfigureForm({
         </div>
       </div>
 
-      {/* Sticky on larger screens; on phones it sits at the end of the form (doesn't cover fields) */}
-      <div className="border-border bg-background/85 -mx-2 flex flex-wrap items-center justify-between gap-4 border-t px-2 py-5 backdrop-blur md:sticky md:bottom-0">
+      {/* At the end of the form on every screen size (it never covers the fields) */}
+      <div className="border-border flex flex-wrap items-center justify-between gap-4 border-t pt-6">
         <p className="text-muted text-sm tabular-nums">
           {t.nQuestions(filled.length)} · {t.nAreas(d.areas.length)} · {t.langName}
           {missingFields(draft).length > 0 &&
@@ -1039,6 +1057,7 @@ function VoiceStudio({
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState("");
   const [exitAsk, setExitAsk] = useState(false); // "delete the setup progress?" alert
+  const [paused, setPaused] = useState(false); // the user paused the conversation
   const voice = useEmilyVoice({
     openai,
     locale: draft.locale,
@@ -1115,9 +1134,28 @@ function VoiceStudio({
   }
 
   /** "Continue": back in the studio; Emily listens again where the conversation was. */
+  /** Pause: Emily stops talking and listening (not while a reply is being worked out). */
+  function pause() {
+    if (phase !== "talk" || paused || thinking || voice.state === "transcribing") return;
+    alive.current = false;
+    voice.cancel();
+    setPaused(true);
+  }
+
+  /** Resume: Emily repeats her last line, then listens again. */
+  async function resume() {
+    setPaused(false);
+    setThinking(false);
+    alive.current = true;
+    const last = [...msgs].reverse().find((m) => m.from === "emily")?.text;
+    if (last) await voice.say(last);
+    if (alive.current) void listenTurn();
+  }
+
   function keepGoing() {
     setExitAsk(false);
     setThinking(false); // a reply in flight was dropped when the alert opened
+    if (paused) return; // it was paused before the alert: stays paused
     alive.current = true;
     if (phase === "talk") void listenTurn();
   }
@@ -1272,22 +1310,30 @@ function VoiceStudio({
     pendingTyped.current = text;
     setTyped("");
     voice.cancel();
+    if (paused) {
+      // Typing while paused resumes the conversation with that answer.
+      setPaused(false);
+      alive.current = true;
+      return void listenTurn();
+    }
     if (voice.state === "idle" && !thinking) void listenTurn(); // nothing was waiting for it
   }
 
   const recording = voice.state === "recording";
   const busy = thinking || voice.state === "transcribing" || voice.state === "preparing";
-  const status = recording
-    ? t.stRecording
-    : voice.state === "transcribing"
-      ? t.stTranscribing
-      : thinking
-        ? t.stFilling
-        : voice.state === "preparing"
-          ? t.lThinking
-          : voice.state === "speaking"
-            ? t.stSpeaking
-            : "";
+  const status = paused
+    ? t.pausedNow
+    : recording
+      ? t.stRecording
+      : voice.state === "transcribing"
+        ? t.stTranscribing
+        : thinking
+          ? t.stFilling
+          : voice.state === "preparing"
+            ? t.lThinking
+            : voice.state === "speaking"
+              ? t.stSpeaking
+              : "";
   const shown = msgs.slice(-4);
 
   // Portal to <body>: an animated (transformed) ancestor would otherwise turn "fixed" into
@@ -1438,13 +1484,23 @@ function VoiceStudio({
             <button
               type="button"
               onClick={recording ? voice.stop : () => void listenTurn()}
-              disabled={busy || voice.state === "speaking"}
+              disabled={paused || busy || voice.state === "speaking"}
               aria-label={recording ? t.stopTalking : t.talk}
               className={`grid h-14 w-14 place-items-center rounded-full shadow-lg transition-[scale,background-color,opacity] duration-160 ease-out active:scale-[0.95] disabled:opacity-40 ${
                 recording ? "bg-white text-red-500" : "bg-white/15 text-white"
               }`}
             >
               {recording ? <StopIcon /> : <MicIcon />}
+            </button>
+            <button
+              type="button"
+              onClick={paused ? () => void resume() : pause}
+              disabled={!paused && (thinking || voice.state === "transcribing")}
+              aria-pressed={paused}
+              className="inline-flex items-center gap-2 rounded-full border border-white/20 px-5 py-2.5 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-40"
+            >
+              {paused ? <PlayIcon className="h-4 w-4" /> : <PauseIcon className="h-4 w-4" />}
+              {paused ? t.resume : t.pause}
             </button>
             <button
               type="button"

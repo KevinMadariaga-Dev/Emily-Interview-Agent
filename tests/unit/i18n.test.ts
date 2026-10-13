@@ -14,6 +14,9 @@ function leaves(obj: Record<string, unknown>, prefix = ""): [string, string][] {
   });
 }
 // Spanish-only marks; English text must not contain them (catches untranslated strings).
+// Common English words; Spanish text must not contain them (brands like Emily/Notion/Gmail are fine).
+const ENGLISH =
+  /\b(the|your|you|with|and|of|is|are|this|that|will|can't|don't|please|here|setup|results?|questions?)\b/i;
 const SPANISH =
   /[¿¡ñáéíóú]|\b(?:de|que|el|del|con|las|los|una|para|pregunta|respuesta|Objetivo)\b/i;
 
@@ -30,6 +33,10 @@ describe.each([
 
   it("English has no Spanish left", () => {
     expect(enL.filter(([, v]) => SPANISH.test(v))).toEqual([]);
+  });
+
+  it("Spanish has no English left", () => {
+    expect(esL.filter(([, v]) => ENGLISH.test(v))).toEqual([]);
   });
 });
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { splitSentences } from "./config";
-import { meter, publishLevel } from "./voice-level";
+import { meter, publishLevel, turnDetector } from "./voice-level";
 import type { OrbMode } from "./voice-orb";
 
 type Recognition = {
@@ -28,10 +28,11 @@ export type VoiceState = "idle" | "preparing" | "speaking" | "recording" | "tran
 // level). After SILENCE_MS of quiet once the user spoke, Emily takes her turn. Tuning knobs:
 const CALIBRATE_MS = 350;
 const MIN_SPEECH = 0.08; // floor for "the user is talking"
-const MIN_SILENCE = 0.04; // floor for "quiet"
 const SPEECH_X = 2.5; // × ambient level
-const SILENCE_X = 1.5; // × ambient level
-const SILENCE_MS = 1200;
+// Anything below the speech level counts as quiet (background noise included): once the user has
+// talked, SILENCE_MS without voice ends the turn and Emily processes what she heard.
+const SILENCE_MS = 3_000;
+const MIN_SPEECH_MS = 250; // voice needed before it counts as an answer (a click or cough doesn't)
 const MAX_TURN_MS = 60_000;
 // Barge-in while Emily talks: the user's voice must stay above BARGE_LEVEL for BARGE_MS (after a
 // short grace period, so her first syllables' echo doesn't trigger it).
@@ -40,6 +41,18 @@ const BARGE_MS = 450;
 const BARGE_GRACE_MS = 700;
 // Each sentence's audio must arrive within this (normally 1–3 s); a stalled request is retried.
 const SPEAK_TIMEOUT_MS = 8_000;
+// Recording formats by preference: Chrome/Firefox/Android → webm/opus, Safari/iPhone → mp4.
+const RECORDING_TYPES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/mp4",
+  "audio/ogg;codecs=opus",
+];
+const recordingType = () =>
+  RECORDING_TYPES.find(
+    (t) => typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(t),
+  );
+
 const MIC: MediaTrackConstraints = {
   echoCancellation: true, // keeps Emily's own voice out of the mic
   noiseSuppression: true,
@@ -77,6 +90,38 @@ export function useEmilyVoice({
   const abortTurn = useRef<(() => void) | null>(null); // stops it and discards the audio
   const cancelled = useRef(false); // cancel() during a line: don't play it (or its fallback)
   const inFlight = useRef(new Set<AbortController>()); // voice requests in flight (incl. prefetch)
+  const micStream = useRef<MediaStream | null>(null); // one mic stream per conversation, reused
+  const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * The microphone, opened once and reused for every turn and for barge-in listening: reopening it
+   * each turn re-prompts on some browsers and fails on some Android phones ("Could not start
+   * audio source"). Reopened only if the track ended (device change, phone call…).
+   */
+  async function getMic() {
+    // A new turn right after cancel(): keep the mic instead of the pending release.
+    if (releaseTimer.current) clearTimeout(releaseTimer.current);
+    releaseTimer.current = null;
+    const s = micStream.current;
+    if (s?.active && s.getAudioTracks().every((t) => t.readyState === "live")) return s;
+    // No mediaDevices: page not on HTTPS, or an in-app browser (WhatsApp, Instagram…).
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("mic-unavailable");
+    micStream.current = await navigator.mediaDevices.getUserMedia({ audio: MIC });
+    return micStream.current;
+  }
+
+  /** Turns the microphone off (the browser's recording indicator goes away). */
+  const releaseMic = useCallback(() => {
+    micStream.current?.getTracks().forEach((t) => t.stop());
+    micStream.current = null;
+  }, []);
+
+  /** The audio graph must be running to measure the level (iOS suspends it after calls/app switches). */
+  const awakeAudio = async () => {
+    const ac = audioContext();
+    if (ac.state !== "running") await ac.resume().catch(() => {});
+    return ac;
+  };
 
   const set = useCallback(
     (s: VoiceState) => {
@@ -271,11 +316,11 @@ export function useEmilyVoice({
   async function watchBargeIn(onSpeech: () => void) {
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: MIC });
+      stream = await getMic();
     } catch {
-      return () => {}; // no mic permission yet: Emily just can't be interrupted
+      return () => {}; // no mic (permission, device, insecure page): Emily just can't be interrupted
     }
-    const ac = audioContext();
+    const ac = await awakeAudio();
     const analyser = ac.createAnalyser();
     analyser.fftSize = 1024;
     const source = ac.createMediaStreamSource(stream);
@@ -299,8 +344,7 @@ export function useEmilyVoice({
     );
     return () => {
       stopMeter();
-      source.disconnect();
-      stream.getTracks().forEach((t) => t.stop());
+      source.disconnect(); // the stream stays open for the next turn
     };
   }
 
@@ -312,40 +356,28 @@ export function useEmilyVoice({
   }
 
   async function listenOpenAi(): Promise<string> {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC });
-    const rec = new MediaRecorder(stream);
+    const stream = await getMic();
+    const type = recordingType();
+    const rec = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream);
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
 
-    const ac = audioContext();
+    const ac = await awakeAudio();
     const analyser = ac.createAnalyser();
     analyser.fftSize = 1024;
     const source = ac.createMediaStreamSource(stream);
     source.connect(analyser);
 
-    let spoke = false;
-    let quietSince = 0;
     let discard = false;
-    const t0 = performance.now();
-    const ambient: number[] = [];
-    let speech = MIN_SPEECH;
-    let silence = MIN_SILENCE;
+    const turn = turnDetector({
+      calibrateMs: CALIBRATE_MS,
+      minSpeech: MIN_SPEECH,
+      speechX: SPEECH_X,
+      silenceMs: SILENCE_MS,
+      minSpeechMs: MIN_SPEECH_MS,
+    });
     const stopMeter = meter(analyser, (level) => {
-      const now = performance.now();
-      if (now - t0 < CALIBRATE_MS) {
-        ambient.push(level);
-        // Someone already talking while we calibrate shouldn't raise the bar: cap the floor.
-        const floor = Math.min(ambient.reduce((a, b) => a + b, 0) / ambient.length, 0.08);
-        speech = Math.max(MIN_SPEECH, floor * SPEECH_X);
-        silence = Math.min(Math.max(MIN_SILENCE, floor * SILENCE_X), speech * 0.75);
-      }
-      if (level > speech) {
-        spoke = true;
-        quietSince = 0;
-      } else if (spoke && level < silence) {
-        quietSince ||= now;
-        if (now - quietSince > SILENCE_MS && rec.state === "recording") rec.stop();
-      }
+      if (turn.frame(level, performance.now()) && rec.state === "recording") rec.stop();
     });
     const maxTimer = setTimeout(() => rec.state === "recording" && rec.stop(), MAX_TURN_MS);
     endTurn.current = () => rec.state === "recording" && rec.stop();
@@ -361,10 +393,9 @@ export function useEmilyVoice({
 
     clearTimeout(maxTimer);
     stopMeter();
-    source.disconnect();
-    stream.getTracks().forEach((t) => t.stop());
+    source.disconnect(); // the stream stays open for the next turn
     endTurn.current = abortTurn.current = null;
-    if (discard || !spoke) {
+    if (discard || !turn.spoke()) {
       set("idle");
       return "";
     }
@@ -372,7 +403,9 @@ export function useEmilyVoice({
     set("transcribing");
     try {
       const form = new FormData();
-      form.append("audio", new Blob(chunks, { type: rec.mimeType || "audio/webm" }));
+      // The real container type (Safari may report "" → use the one we asked for).
+      const blobType = (rec.mimeType || type || "audio/webm").split(";")[0]!;
+      form.append("audio", new Blob(chunks, { type: blobType }));
       form.append("language", locale);
       const res = await fetch("/api/voice/transcribe", { method: "POST", body: form });
       if (!res.ok) throw new Error(`transcribe ${res.status}`);
@@ -388,21 +421,31 @@ export function useEmilyVoice({
     return new Promise((resolve, reject) => {
       const r = new Rec();
       r.lang = locale === "es" ? "es-MX" : "en-US";
-      r.continuous = false; // the browser ends the turn on silence
+      // Continuous: we end the turn ourselves after SILENCE_MS without new words (same as above).
+      r.continuous = true;
       r.interimResults = true;
       let heard = "";
       let discard = false;
+      let quiet = 0;
+      const maxTimer = setTimeout(() => r.stop(), MAX_TURN_MS);
       r.onresult = (e) => {
         heard = "";
         for (let i = 0; i < e.results.length; i++) heard += e.results[i]![0]!.transcript;
         setInterim(heard);
         publishLevel(0.5);
         setTimeout(() => publishLevel(0), 120);
+        clearTimeout(quiet);
+        quiet = window.setTimeout(() => r.stop(), SILENCE_MS);
       };
       r.onerror = (e) => {
-        if (e.error === "not-allowed") reject(new Error("NotAllowedError"));
+        if (e.error === "not-allowed" || e.error === "service-not-allowed")
+          reject(Object.assign(new Error("NotAllowedError"), { name: "NotAllowedError" }));
+        else if (e.error === "audio-capture")
+          reject(Object.assign(new Error("NotFoundError"), { name: "NotFoundError" }));
       };
       r.onend = () => {
+        clearTimeout(quiet);
+        clearTimeout(maxTimer);
         endTurn.current = abortTurn.current = null;
         set("idle");
         resolve(discard ? "" : heard.trim());
@@ -425,7 +468,7 @@ export function useEmilyVoice({
   /** Ends the current recording now (the pending `listen()` resolves with what was said). */
   const stop = useCallback(() => endTurn.current?.(), []);
 
-  /** Silences Emily and drops any recording in progress. */
+  /** Silences Emily, drops any recording in progress and turns the microphone off. */
   const cancel = useCallback(() => {
     cancelled.current = true;
     inFlight.current.forEach((c) => c.abort());
@@ -433,7 +476,11 @@ export function useEmilyVoice({
     if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
     abortTurn.current?.();
     publishLevel(0);
-  }, []);
+    // The recorder's onstop still needs the tracks for a moment: release right after (unless a
+    // new turn grabs the mic first — see getMic).
+    if (releaseTimer.current) clearTimeout(releaseTimer.current);
+    releaseTimer.current = setTimeout(releaseMic, 300);
+  }, [releaseMic]);
 
   useEffect(() => cancel, [cancel]);
 

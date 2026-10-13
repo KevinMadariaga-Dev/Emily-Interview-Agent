@@ -5,13 +5,17 @@ import { z } from "zod";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { requireAdmin } from "@/server/auth/admin";
 import { emilyRepository } from "@/server/repositories/emily.repository";
+import { translateDraft } from "./ai";
 import {
   freeSlug,
+  mixesLanguages,
   normalizeDraft,
   summarySchema,
   toSlug,
+  transcriptSchema,
   type Draft,
   type InterviewSummary,
+  type Transcript,
 } from "./config";
 import type { SavedEmily, SavedResult } from "./store";
 
@@ -47,14 +51,26 @@ export async function listSaved(): Promise<{ emilys: SavedEmily[]; results: Save
       turns: r.turns,
       locale: r.locale,
       translations: r.translations,
+      transcript: r.transcript,
     })),
   };
+}
+
+/**
+ * Emily speaks one language: if the goal/questions/areas were written (partly) in the other one,
+ * they're translated before saving, so the spoken and on-screen text never mix languages.
+ * Without AI (or if translation fails) the draft is saved as typed.
+ */
+async function inOneLanguage(draft: Draft): Promise<Draft> {
+  if (!mixesLanguages(draft)) return draft;
+  const tr = await translateDraft(draft, draft.locale).catch(() => null);
+  return tr ? normalizeDraft({ ...draft, ...tr }) : draft;
 }
 
 /** Saves a new Emily under a free slug from its project name; returns the slug. */
 export async function createEmily(rawDraft: Draft): Promise<string> {
   await requireAdmin();
-  const draft = normalizeDraft(rawDraft);
+  const draft = await inOneLanguage(normalizeDraft(rawDraft));
   const base = toSlug(draft.project) || "entrevista";
   for (let attempt = 0; attempt < 3; attempt++) {
     const slug = freeSlug(base, await emilyRepository.slugsLike(base));
@@ -98,17 +114,24 @@ export async function saveResultTranslation(
  * Public (the participant's link): stores the finished interview under its Emily. Project and
  * language come from the saved Emily, never from the browser.
  */
-export async function saveInterviewResult(slug: string, summary: InterviewSummary, turns: number) {
+export async function saveInterviewResult(
+  slug: string,
+  summary: InterviewSummary,
+  history: Transcript,
+) {
   if (!rateLimit(`result:${clientIp(await headers())}`, 10, 10 * 60_000))
     throw new Error("Demasiadas solicitudes, espera un momento.");
   const emily = await emilyRepository.find(slugSchema.parse(slug));
   if (!emily) throw new Error("Esta Emily ya no existe.");
   const draft = normalizeDraft(emily.draft);
+  const transcript = transcriptSchema.safeParse(history);
+  if (!transcript.success) throw new Error("Conversación inválida.");
   await emilyRepository.addResult({
     emilySlug: emily.slug,
     project: draft.project,
     summary: summarySchema.parse(summary),
-    turns: z.number().int().min(0).max(500).parse(turns),
+    transcript: transcript.data,
+    turns: transcript.data.length,
     locale: draft.locale,
   });
 }

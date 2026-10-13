@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import type { Draft, InterviewSummary } from "./config";
+import type { Draft, InterviewSummary, Transcript } from "./config";
 import {
   createEmily,
   deleteEmily as deleteEmilyAction,
@@ -34,6 +34,8 @@ export type SavedResult = {
   locale: Lang;
   /** The summary translated to the other UI language, cached so it's translated once. */
   translations?: Partial<Record<Lang, InterviewSummary>>;
+  /** The whole conversation (empty for interviews saved before it was stored). */
+  transcript?: Transcript;
 };
 
 type Saved = { ready: boolean; error: string; emilys: SavedEmily[]; results: SavedResult[] };
@@ -118,8 +120,8 @@ export async function saveResultTranslation(id: string, lang: Lang, summary: Int
 }
 
 /** Stores a finished interview (also from the participant's public link). */
-export async function saveResult(slug: string, summary: InterviewSummary, turns: number) {
-  await saveInterviewResult(slug, summary, turns);
+export async function saveResult(slug: string, summary: InterviewSummary, history: Transcript) {
+  await saveInterviewResult(slug, summary, history);
   if (snapshot.ready) void reloadSaved(); // admin views open: show it in "Resultados"
 }
 
