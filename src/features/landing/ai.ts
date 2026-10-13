@@ -6,6 +6,8 @@ import { getLlm } from "@/integrations/llm";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { requireAdmin } from "@/server/auth/admin";
+import { emilyRepository } from "@/server/repositories/emily.repository";
 import { planFromText } from "@/features/demo/plan-fallback";
 import {
   missingFields,
@@ -17,6 +19,9 @@ import {
   normalizeDraft,
   toQuestions,
   type PresetId,
+  isOpen,
+  summarySchema,
+  type InterviewSummary,
 } from "./config";
 
 // Shared rules so every path writes questions the same way.
@@ -27,6 +32,17 @@ const QUESTION_RULES = `Reglas para las preguntas:
 - Orden lógico: apertura → preguntas clave del objetivo → profundización → cierre.
 - Si ya existen preguntas y hay información nueva: reformula las existentes para que sean más precisas, agrega las que falten para cubrir el objetivo y elimina duplicados. Conserva las que el usuario pidió explícitamente.
 - Entre 5 y 10 preguntas en total.`;
+
+/**
+ * The interview's Emily, loaded from the database (public actions never trust a browser-sent
+ * configuration: it would make them a free LLM endpoint). Paused or expired links are refused.
+ */
+async function openEmily(slug: string) {
+  const row = /^[a-z0-9-]{1,90}$/.test(slug) ? await emilyRepository.find(slug) : null;
+  const draft = row && normalizeDraft(row.draft);
+  if (!draft || !isOpen(draft)) throw new Error("Esta Emily no está disponible.");
+  return draft;
+}
 
 const hasLlm = () =>
   !!(env().LLM_PROVIDER === "anthropic" ? env().ANTHROPIC_API_KEY : env().OPENAI_API_KEY);
@@ -53,7 +69,11 @@ async function askJson<T>(system: string, user: string, schema: z.ZodType<T>) {
   return schema.parse(JSON.parse(raw));
 }
 
-const replySchema = z.object({ patch: patchSchema, reply: z.string().min(1).max(400) });
+const replySchema = z.object({
+  patch: patchSchema,
+  reply: z.string().min(1).max(400),
+  done: z.boolean().default(false),
+});
 
 /**
  * Voice mode turn: what the user said + current draft → fields to update + Emily's next line.
@@ -61,33 +81,42 @@ const replySchema = z.object({ patch: patchSchema, reply: z.string().min(1).max(
 export async function fillFromSpeech(
   transcript: string,
   draft: Draft,
-): Promise<{ patch: Patch; reply: string; source: "ai" | "local" }> {
+): Promise<{ patch: Patch; reply: string; done: boolean; source: "ai" | "local" }> {
   draft = normalizeDraft(draft);
+  await requireAdmin();
   await allow("fill");
   const said = z.string().trim().min(2).max(4000).parse(transcript);
 
   if (hasLlm()) {
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const { patch, reply } = await askJson(
+      const lang = draft.locale === "en" ? "inglés (English)" : "español";
+      const { patch, reply, done } = await askJson(
         `Eres Emily, una entrevistadora con IA. Estás ayudando a configurar una entrevista por voz.
 Recibes el borrador actual (JSON) y lo que el usuario acaba de decir (transcripción de voz, puede tener errores).
-Devuelve SOLO JSON: {"patch": {...}, "reply": string}.
+Devuelve SOLO JSON: {"patch": {...}, "reply": string, "done": boolean}.
 - patch: solo los campos que el usuario mencionó o que se deducen con claridad. Campos posibles:
-  recipientName, company, project, objective, questions (lista COMPLETA resultante), areas (lista completa), reportEmail (correo donde enviar los resultados, solo si lo dicta claramente), locale ("es"|"en"), status ("active"|"paused"), expires ("YYYY-MM-DD"; hoy es ${today}), noExpiry (boolean).
+  recipientName, company, project, objective, questions (lista COMPLETA resultante), areas (lista completa), reportEmail (solo si lo dicta claramente), status ("active"|"paused"), expires ("YYYY-MM-DD"; hoy es ${today}), noExpiry (boolean).
 - En cuanto el objetivo esté claro, redacta el objective y formula el set de preguntas. Si el usuario da más información y ya había preguntas, reformúlalas o agrega nuevas para lograr una mejor entrevista.
 ${QUESTION_RULES}
-- reply: 1 o 2 frases habladas, cálidas y breves, en el idioma del usuario: confirma lo que anotaste y pide lo que falta (proyecto, objetivo, preguntas, destinatario, caducidad). Si ya está todo, invita a revisar y pulsar "Crear Emily".`,
+- reply: 1 o 2 frases habladas, cálidas y breves, SIEMPRE en ${lang} (aunque el usuario hable otro idioma): confirma lo que anotaste y pide UNA cosa que falte, en este orden: destinatario (nombre/empresa), proyecto, objetivo; luego propone las preguntas.
+- NUNCA pidas el correo para los resultados: se agrega después en la configuración.
+- Cuando ya hay proyecto, objetivo y preguntas (y ya preguntaste para quién es), termina reply preguntando si necesita agregar o preguntar algo más, o si eso es todo (por ejemplo: "${draft.locale === "en" ? "Is there anything else you'd like Emily to ask, or is that all?" : "¿Quieres que Emily pregunte algo más o eso es todo?"}").
+  - Si el usuario pide más preguntas o cambios: aplícalos (questions = lista completa actualizada), confirma en una frase y vuelve a preguntar si hay algo más. done=false.
+  - done: true SOLO cuando, después de esa pregunta, el usuario dice que no hay nada más ("es todo", "no", "ya está", "that's all"…). Entonces patch={} y reply es una palabra de confirmación ("¡Perfecto!" / "Great!").`,
         JSON.stringify({ draft, said }),
         replySchema,
       );
-      return { patch, reply, source: "ai" };
+      return { patch, reply, done, source: "ai" };
     } catch (err) {
       logger.error("fillFromSpeech LLM failed, using local fallback", { err: String(err) });
     }
   }
 
-  // Local fallback: organize the request into objective + questions.
+  // Local fallback: "that's all" closes once the essentials exist; else organize the request.
+  const en = draft.locale === "en";
+  if (!missingFields(draft).length && isThatAll(said))
+    return { patch: {}, reply: en ? "Great!" : "¡Perfecto!", done: true, source: "local" };
   const plan = planFromText(said);
   const patch: Patch = {
     project: draft.project || plan.name,
@@ -97,13 +126,26 @@ ${QUESTION_RULES}
       ...toQuestions(plan.questions.map((q) => q.text)),
     ].slice(0, 15),
   };
-  const names = { project: "el proyecto", objective: "el objetivo", questions: "las preguntas" };
+  const names = en
+    ? { project: "the project", objective: "the goal", questions: "the questions" }
+    : { project: "el proyecto", objective: "el objetivo", questions: "las preguntas" };
   const missing = missingFields({ ...draft, ...patch } as Draft).map((m) => names[m]);
+  const n = patch.questions!.length;
   const reply = missing.length
-    ? `Anotado. Ahora cuéntame ${missing.join(" y ")}.`
-    : `Listo, organicé ${patch.questions!.length} preguntas. Revisa los campos y pulsa Crear Emily.`;
-  return { patch, reply, source: "local" };
+    ? en
+      ? `Got it. Now tell me ${missing.join(" and ")}.`
+      : `Anotado. Ahora cuéntame ${missing.join(" y ")}.`
+    : en
+      ? `Done, I organized ${n} questions. Is there anything else you'd like Emily to ask, or is that all?`
+      : `Listo, organicé ${n} preguntas. ¿Quieres que Emily pregunte algo más o eso es todo?`;
+  return { patch, reply, done: false, source: "local" };
 }
+
+/** "Es todo" / "that's all": the user has nothing more to add (local fallback without the LLM). */
+const isThatAll = (text: string) =>
+  /^\W*(no|nop|nope|nada( más)?|es todo|eso es todo|eso sería todo|ya está|ya es todo|listo|that'?s (all|it)|nothing( else)?|no more|all good|done)\W*(gracias|thanks|thank you)?\W*$/i.test(
+    text.trim(),
+  );
 
 /** Preset + context ("tienda de ropa") → project, objective, questions and areas. */
 export async function generateFromPreset(
@@ -111,6 +153,7 @@ export async function generateFromPreset(
   context: string,
   locale: "es" | "en",
 ): Promise<{ patch: Patch; source: "ai" | "local" }> {
+  await requireAdmin();
   await allow("preset");
   const preset = presets.find((p) => p.id === presetId);
   if (!preset) throw new Error("Plantilla desconocida");
@@ -147,6 +190,7 @@ export async function refineQuestions(
   draft: Draft,
 ): Promise<{ questions: Patch["questions"]; note: string; source: "ai" | "local" }> {
   draft = normalizeDraft(draft);
+  await requireAdmin();
   await allow("refine");
   if (draft.objective.trim().length < 10) throw new Error("Primero escribe el objetivo.");
 
@@ -202,6 +246,7 @@ export async function translateDraft(
   to: "es" | "en",
 ): Promise<DraftTranslation | null> {
   draft = normalizeDraft(draft);
+  await requireAdmin();
   await allow("translate");
   if (!hasLlm()) return null;
   try {
@@ -235,6 +280,7 @@ export async function translateSummary(
   to: "es" | "en",
 ): Promise<InterviewSummary | null> {
   const input = summarySchema.parse(summary);
+  await requireAdmin();
   await allow("translate");
   if (!hasLlm()) return null;
   try {
@@ -286,9 +332,9 @@ export type NextTurn = z.infer<typeof nextSchema>;
  * Emily's next line: first a presentation (no question), then the required questions in order
  * (one per turn, at most one follow-up each), then a closing (`done`).
  */
-export async function interviewTurn(draft: Draft, history: Turn[]): Promise<NextTurn> {
-  draft = normalizeDraft(draft);
+export async function interviewTurn(slug: string, history: Turn[]): Promise<NextTurn> {
   await allow("interview");
+  const draft = await openEmily(slug);
   const turns = historySchema.parse(history);
   const qs = draft.questions.map((q) => q.text).filter((q) => q.trim());
   const es = draft.locale === "es";
@@ -353,31 +399,12 @@ Responde SOLO JSON: {"say": string, "done": boolean, "covered": número de pregu
   };
 }
 
-const summarySchema = z.object({
-  summary: z.string().max(1500),
-  insights: z.array(z.string().max(300)).max(8),
-  answers: z
-    .array(
-      z.object({
-        question: z.string(),
-        answer: z.string(),
-        status: z.enum(["completa", "parcial", "sin_respuesta"]),
-      }),
-    )
-    .max(20),
-  objective: z.object({ met: z.boolean(), reason: z.string().max(400) }),
-  // Relevant information extracted from the conversation (default [] keeps older saved results valid).
-  keyFacts: z.array(z.string().max(300)).max(12).default([]),
-  painPoints: z.array(z.string().max(300)).max(8).default([]),
-  quotes: z.array(z.string().max(400)).max(6).default([]),
-  nextSteps: z.array(z.string().max(300)).max(6).default([]),
-});
-export type InterviewSummary = z.infer<typeof summarySchema>;
+export type { InterviewSummary };
 
 /** Structured result of the test interview (what the team would receive by email/Notion). */
-export async function summarizeInterview(draft: Draft, history: Turn[]): Promise<InterviewSummary> {
-  draft = normalizeDraft(draft);
+export async function summarizeInterview(slug: string, history: Turn[]): Promise<InterviewSummary> {
   await allow("summary");
+  const draft = await openEmily(slug);
   const turns = historySchema.parse(history);
   const qs = draft.questions.map((q) => q.text).filter((q) => q.trim());
 

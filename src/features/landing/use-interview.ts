@@ -39,8 +39,8 @@ export function useInterviewSession({
   onMode,
 }: {
   draft: Draft;
-  /** When set, the result is saved under this Emily (shown in "Resultados"). */
-  slug?: string;
+  /** The saved Emily: the result, email and Notion page are stored under it. */
+  slug: string;
   onMode: (m: OrbMode) => void;
 }) {
   const [openai, setOpenai] = useState(false);
@@ -79,22 +79,24 @@ export function useInterviewSession({
     setPhase("summarizing");
     onMode("speaking");
     try {
-      const result = await summarizeInterview(draft, hist.current);
+      const result = await summarizeInterview(slug, hist.current);
       setSummary(result);
       const answered = hist.current.some((t) => t.role === "participant");
-      if (slug && answered)
-        saveResult(slug, draft.project, result, hist.current.length, draft.locale);
+      if (answered)
+        saveResult(slug, result, hist.current.length).catch((err) =>
+          setError(err instanceof Error ? err.message : String(err)),
+        );
       // Email the report (Gmail/Resend) to the Emily's report address; never blocks the ending.
       // Same report into Notion (skipped server-side when Notion isn't configured).
       if (answered) {
         setNotion("saving");
-        saveInterviewToNotion(draft, result, hist.current)
+        saveInterviewToNotion(slug, result, hist.current)
           .then(setNotion)
           .catch(() => setNotion({ saved: false, reason: "failed" }));
       }
       if (answered && draft.reportEmail) {
         setReport("sending");
-        sendInterviewReport(draft, result, hist.current)
+        sendInterviewReport(slug, result, hist.current)
           .then(setReport)
           .catch(() => setReport({ sent: false, reason: "failed" }));
       }
@@ -113,7 +115,7 @@ export function useInterviewSession({
     let silences = 0;
     try {
       while (alive.current && !ending.current) {
-        const next = await withTimeout(interviewTurn(draft, hist.current), 30_000);
+        const next = await withTimeout(interviewTurn(slug, hist.current), 30_000);
         if (!alive.current || ending.current) return;
         setCovered(next.covered);
         setAsking(next.asking);

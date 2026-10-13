@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           // Microphone is required on the interview page only.
           { key: "Permissions-Policy", value: "microphone=(self), camera=()" },
+          // No framing by other sites (clickjacking: a hidden "Start" over the mic prompt).
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
         ],
       },
     ];

@@ -1,3 +1,6 @@
+> **Historical document.** Written for the first design (`/admin` panel, `/i/<token>` realtime
+> voice, job worker), which was removed. The current app is described in the [README](../README.md).
+
 # Architecture
 
 ## 1. Principles

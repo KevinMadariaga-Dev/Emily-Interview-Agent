@@ -1,23 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Draft } from "./config";
 import { dict } from "./i18n";
 import { MicIcon, SendIcon, StopIcon } from "./icons";
-import { loadEmily } from "./store";
 import { useInterviewSession } from "./use-interview";
 import { VoiceOrb, type OrbMode } from "./voice-orb";
 
-/** What the participant opens at /e/<slug>. Loads the Emily saved in this browser. */
-export function PublicEmily({ slug }: { slug: string }) {
-  const [draft, setDraft] = useState<Draft | null | undefined>(undefined); // undefined = loading
+/** What the participant opens at /e/<slug> (the Emily comes from the database; null = not found). */
+export function PublicEmily({ slug, draft }: { slug: string; draft: Draft | null }) {
   const t = dict[draft?.locale ?? "es"];
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- read-once from browser storage
-    setDraft(loadEmily(slug));
-  }, [slug]);
 
   return (
     <main
@@ -30,7 +23,7 @@ export function PublicEmily({ slug }: { slug: string }) {
         </p>
         {draft && <p className="truncate text-sm text-violet-200">{draft.project}</p>}
       </header>
-      {draft === undefined ? null : draft ? (
+      {draft ? (
         <VoiceStage draft={draft} slug={slug} />
       ) : (
         <section className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
@@ -62,10 +55,9 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
   const [typed, setTyped] = useState("");
   const s = useInterviewSession({ draft, slug, onMode: setMode });
   const t = dict[draft.locale];
-  const { phase, voice, history, asking } = s;
+  const { phase, voice, asking } = s;
   const total = draft.questions.length;
   const current = asking >= 0 ? draft.questions[asking] : undefined;
-  const lastYou = [...history].reverse().find((t) => t.role === "participant")?.text ?? "";
   const recording = voice.state === "recording";
 
   const status =
@@ -165,13 +157,6 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
               {phase === "summarizing" ? t.pMoment : t.pHelloLong(draft.recipientName)}
             </p>
           )}
-          <p className="min-h-6 max-w-2xl text-violet-200 italic">
-            {recording && voice.interim
-              ? voice.interim
-              : !recording && lastYou
-                ? `“${lastYou}”`
-                : ""}
-          </p>
 
           {total > 0 && (
             <div

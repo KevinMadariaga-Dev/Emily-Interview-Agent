@@ -10,16 +10,11 @@ import { z } from "zod";
 const serverSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   NEXT_PUBLIC_APP_URL: z.url().default("http://localhost:3000"),
-  // Optional: the landing (Emily setup, interviews, email/Notion) runs without a database.
+  // Postgres (Supabase): Emilys and their results. Required to save or open Emilys.
   DATABASE_URL: z.string().optional(), // "" = not configured (requireEnv rejects it)
-  // Optional password for the whole site (HTTP Basic) — see src/proxy.ts.
-  SITE_PASSWORD: z.string().optional(), // "" = no password
+  // Admin password (HTTP Basic) — required in production, see src/server/auth/admin.ts.
+  SITE_PASSWORD: z.string().optional(), // "" = no password (local only)
 
-  ADMIN_SESSION_SECRET: z.string().min(16).optional(),
-  ADMIN_ALLOWED_EMAILS: z.string().default(""),
-
-  VOICE_PROVIDER: z.enum(["deepgram", "openai-realtime"]).default("deepgram"),
-  DEEPGRAM_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_STT_MODEL: z.string().default("gpt-4o-transcribe"),
   OPENAI_TTS_MODEL: z.string().default("gpt-4o-mini-tts"),
@@ -33,7 +28,6 @@ const serverSchema = z.object({
 
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("Emily <onboarding@resend.dev>"),
-  EMAIL_REPORT_TO: z.string().default(""),
   // Gmail SMTP (App Password). When set, reports are sent from this Gmail account.
   GMAIL_USER: z.string().optional(),
   GMAIL_APP_PASSWORD: z.string().optional(),
@@ -44,8 +38,6 @@ const serverSchema = z.object({
   NOTION_API_KEY: z.string().optional(),
   NOTION_DATA_SOURCE_ID: z.string().optional(),
   NOTION_API_VERSION: z.string().default("2025-09-03"),
-
-  CRON_SECRET: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;

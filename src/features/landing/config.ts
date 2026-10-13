@@ -261,25 +261,125 @@ export function verdict(pct: number) {
  * Accepts drafts saved by older versions (questions as plain strings, no voice…) and returns a
  * complete Draft. Used wherever a draft comes from storage or crosses the client/server line.
  */
+/** A string field from untrusted input: anything else becomes "", long text is cut at `max`. */
+const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
+
+/**
+ * Accepts drafts from any source (browser, storage, older versions, the database) and returns a
+ * well-typed Draft with bounded sizes: it's the trust boundary for every saved configuration.
+ */
 export function normalizeDraft(raw: unknown): Draft {
-  const d = (raw ?? {}) as Omit<Partial<Draft>, "questions"> & { questions?: unknown[] };
-  const qs = (d.questions ?? []).filter(
-    (q): q is string | Question =>
-      typeof q === "string" || (!!q && typeof (q as Question).text === "string"),
-  );
+  const d = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const qs = (Array.isArray(d.questions) ? d.questions : [])
+    .map((q): string | Question | null =>
+      typeof q === "string"
+        ? q.slice(0, 300)
+        : q && typeof q === "object" && typeof (q as Question).text === "string"
+          ? {
+              text: (q as Question).text.slice(0, 300),
+              kind: (q as Question).kind === "cerrada" ? "cerrada" : "abierta",
+            }
+          : null,
+    )
+    .filter((q): q is string | Question => q !== null)
+    .slice(0, 15);
   return {
-    recipientName: d.recipientName ?? "",
-    company: d.company ?? "",
-    project: d.project ?? "",
-    objective: d.objective ?? "",
+    recipientName: str(d.recipientName, 120),
+    company: str(d.company, 120),
+    project: str(d.project, 160),
+    objective: str(d.objective, 800),
     questions: toQuestions(qs as NonNullable<Patch["questions"]>).filter((q) => q.text.trim()),
     // Any retired voice (male/neutral, or ones that failed validation) falls back to Coral.
     voice: voiceIds.includes(d.voice as VoiceId) ? (d.voice as VoiceId) : "coral",
-    reportEmail: typeof d.reportEmail === "string" ? d.reportEmail.trim() : "",
-    areas: d.areas ?? [],
+    reportEmail: str(d.reportEmail, 254).trim(),
+    areas: (Array.isArray(d.areas) ? d.areas : [])
+      .filter((a): a is string => typeof a === "string")
+      .map((a) => a.slice(0, 60))
+      .slice(0, 10),
     locale: d.locale === "en" ? "en" : "es",
     status: d.status === "paused" ? "paused" : "active",
-    expires: d.expires ?? "",
-    noExpiry: d.noExpiry ?? false,
+    expires: str(d.expires, 10),
+    noExpiry: d.noExpiry === true,
   };
+}
+
+/** What ChatGPT returns at the end of an interview (also validates results saved in the DB). */
+export const summarySchema = z.object({
+  summary: z.string().max(1500),
+  insights: z.array(z.string().max(300)).max(8),
+  answers: z
+    .array(
+      z.object({
+        question: z.string().max(400),
+        answer: z.string().max(2000),
+        status: z.enum(["completa", "parcial", "sin_respuesta"]),
+      }),
+    )
+    .max(20),
+  objective: z.object({ met: z.boolean(), reason: z.string().max(400) }),
+  // Relevant information extracted from the conversation (default [] keeps older saved results valid).
+  keyFacts: z.array(z.string().max(300)).max(12).default([]),
+  painPoints: z.array(z.string().max(300)).max(8).default([]),
+  quotes: z.array(z.string().max(400)).max(6).default([]),
+  nextSteps: z.array(z.string().max(300)).max(6).default([]),
+});
+export type InterviewSummary = z.infer<typeof summarySchema>;
+
+/** URL-safe slug from a project name ("Boutique Luna" → "boutique-luna"). */
+export const toSlug = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+
+/** `base`, or `base-2`, `base-3`… when another Emily already uses it. */
+export function freeSlug(base: string, taken: Iterable<string>) {
+  const used = new Set(taken);
+  let slug = base;
+  for (let n = 2; used.has(slug); n++) slug = `${base}-${n}`;
+  return slug;
+}
+
+/** Whether the Emily's link takes interviews now: not paused and not past its expiry day. */
+export function isOpen(d: Draft, now = new Date()) {
+  if (d.status === "paused") return false;
+  if (d.noExpiry || !/^\d{4}-\d{2}-\d{2}$/.test(d.expires)) return true;
+  return now <= new Date(`${d.expires}T23:59:59`);
+}
+
+/** A spoken confirmation: "sí"/"yes" → yes, "no" → no, anything else → null (treat as a correction). */
+export function answerKind(text: string): "yes" | "no" | null {
+  const s = text.trim().toLowerCase();
+  if (
+    /^\W*(s[ií]+|claro|correcto|exacto|as[ií] es|perfecto|ok(ay)?|vale|de acuerdo|est[aá] bien|yes|yeah|yep|correct|right|sure|that'?s right)(?!\p{L})/u.test(
+      s,
+    )
+  )
+    return "yes";
+  if (/^\W*(no|nop|nope|incorrecto|negativo|est[aá] mal|wrong|not really)(?!\p{L})/u.test(s))
+    return "no";
+  return null;
+}
+
+/**
+ * Splits a long spoken line into a few chunks of whole sentences, each synthesized on its own:
+ * the first one sounds sooner and a stalled request only costs that chunk. Chunks are kept long
+ * (≥ minChars) so there are few joins — short lines stay in one piece.
+ */
+export function splitSentences(text: string, minChars = 90): string[] {
+  const raw =
+    text
+      .match(/[^.!?…]+(?:[.!?…]+["”»)]*|$)/g)
+      ?.map((s) => s.trim())
+      .filter(Boolean) ?? [];
+  const out: string[] = [];
+  for (const s of raw) {
+    const last = out.at(-1);
+    if (last !== undefined && last.length < minChars) out[out.length - 1] = `${last} ${s}`;
+    else out.push(s);
+  }
+  return out.length ? out : [text.trim()];
 }

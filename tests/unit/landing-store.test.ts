@@ -1,7 +1,18 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import type { Draft } from "@/features/landing/config";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Draft, InterviewSummary } from "@/features/landing/config";
 
-// Minimal browser storage for the node test environment.
+// The client store talks to the database through server actions: mocked here.
+const actions = vi.hoisted(() => ({
+  listSaved: vi.fn(),
+  createEmily: vi.fn(),
+  deleteEmily: vi.fn(),
+  saveEmilyTranslation: vi.fn(),
+  saveResultTranslation: vi.fn(),
+  saveInterviewResult: vi.fn(),
+  importBrowserEmilys: vi.fn(),
+}));
+vi.mock("@/features/landing/emilys", () => actions);
+
 const mem = new Map<string, string>();
 Object.assign(globalThis, {
   localStorage: {
@@ -9,20 +20,12 @@ Object.assign(globalThis, {
     setItem: (k: string, v: string) => void mem.set(k, v),
     removeItem: (k: string) => void mem.delete(k),
   },
-  window: { dispatchEvent: () => true },
+  window: { dispatchEvent: () => true, addEventListener() {}, removeEventListener() {} },
+  StorageEvent: class extends Event {},
 });
 
-const {
-  deleteEmily,
-  loadEmily,
-  saveEmily,
-  saveEmilyTranslation,
-  saveResult,
-  saveResultTranslation,
-  uniqueSlug,
-} = await import("@/features/landing/store");
+const store = await import("@/features/landing/store");
 
-const draft = { project: "Boutique Luna", questions: [] } as unknown as Draft;
 const summary = {
   summary: "ok",
   insights: [],
@@ -32,47 +35,75 @@ const summary = {
   painPoints: [],
   quotes: [],
   nextSteps: [],
+} satisfies InterviewSummary;
+const draft = { project: "Boutique Luna", questions: [], locale: "es" } as unknown as Draft;
+const emily = { slug: "boutique-luna", draft, createdAt: "2026-10-01T00:00:00.000Z" };
+const result = {
+  id: "r1",
+  slug: "boutique-luna",
+  project: "Boutique Luna",
+  at: "2026-10-02T00:00:00.000Z",
+  summary,
+  turns: 4,
+  locale: "es" as const,
 };
 
-describe("landing store", () => {
-  beforeEach(() => mem.clear());
+beforeEach(() => {
+  mem.clear();
+  vi.clearAllMocks();
+  actions.listSaved.mockResolvedValue({ emilys: [emily], results: [result] });
+});
 
-  it("saves under the project slug and keeps names unique", () => {
-    expect(uniqueSlug("boutique-luna")).toBe("boutique-luna");
-    saveEmily("boutique-luna", draft);
-    expect(uniqueSlug("boutique-luna")).toBe("boutique-luna-2");
-    saveEmily("boutique-luna-2", draft);
-    expect(uniqueSlug("boutique-luna")).toBe("boutique-luna-3");
-    expect(loadEmily("boutique-luna")?.project).toBe("Boutique Luna");
-    expect(JSON.parse(mem.get("emily:list")!)).toEqual(["boutique-luna-2", "boutique-luna"]);
+describe("landing store (database-backed)", () => {
+  it("creates through the server, which picks the slug, then reloads", async () => {
+    actions.createEmily.mockResolvedValue("boutique-luna-2");
+    expect(await store.saveEmily(draft)).toBe("boutique-luna-2");
+    expect(actions.createEmily).toHaveBeenCalledWith(draft);
+    expect(actions.listSaved).toHaveBeenCalled();
   });
 
-  it("saves the interview language and caches a translated summary once", () => {
-    saveResult("t", "T", summary, 2, "es");
-    const [r] = JSON.parse(mem.get("emily:results:t")!);
-    expect(r.locale).toBe("es");
-    saveResultTranslation("t", r.at, "en", { ...summary, summary: "translated" });
-    const [after] = JSON.parse(mem.get("emily:results:t")!);
-    expect(after.summary.summary).toBe("ok"); // original untouched
-    expect(after.translations.en.summary).toBe("translated");
+  it("deletes optimistically and reloads from the server", async () => {
+    await store.reloadSaved();
+    actions.listSaved.mockResolvedValue({ emilys: [], results: [] });
+    actions.deleteEmily.mockResolvedValue(undefined);
+    await store.deleteEmily("boutique-luna");
+    expect(actions.deleteEmily).toHaveBeenCalledWith("boutique-luna");
   });
 
-  it("caches a card translation without touching the Emily's own text or language", () => {
-    saveEmily("c", { ...draft, locale: "es" } as Draft);
-    saveEmilyTranslation("c", "en", { project: "Luna Boutique", objective: "Goal" });
-    const saved = JSON.parse(mem.get("emily:config:c")!);
-    expect(saved.draft.project).toBe("Boutique Luna");
-    expect(saved.translations.en.project).toBe("Luna Boutique");
-    expect(loadEmily("c")!.locale).toBe("es");
+  it("saves a result by slug only (project and language are the server's)", async () => {
+    await store.saveResult("boutique-luna", summary, 4);
+    expect(actions.saveInterviewResult).toHaveBeenCalledWith("boutique-luna", summary, 4);
   });
 
-  it("deletes the Emily and its results", () => {
-    saveEmily("x", draft);
-    saveResult("x", "X", summary, 4, "es");
-    expect(mem.has("emily:results:x")).toBe(true);
-    deleteEmily("x");
-    expect(loadEmily("x")).toBeNull();
-    expect(mem.has("emily:results:x")).toBe(false);
-    expect(JSON.parse(mem.get("emily:list")!)).toEqual([]);
+  it("caches translations on the server by id / slug", async () => {
+    await store.saveResultTranslation("r1", "en", { ...summary, summary: "translated" });
+    expect(actions.saveResultTranslation).toHaveBeenCalledWith("r1", "en", expect.anything());
+    await store.saveEmilyTranslation("boutique-luna", "en", { project: "P", objective: "O" });
+    expect(actions.saveEmilyTranslation).toHaveBeenCalledWith("boutique-luna", "en", {
+      project: "P",
+      objective: "O",
+    });
+  });
+});
+
+describe("one-time import of pre-database Emilys", () => {
+  it("reads wrapped and bare (older) drafts with their results", () => {
+    mem.set("emily:list", JSON.stringify(["a", "b", "gone"]));
+    mem.set("emily:config:a", JSON.stringify({ slug: "a", draft, createdAt: "2026-09-01" }));
+    mem.set("emily:config:b", JSON.stringify(draft)); // bare draft
+    mem.set("emily:results:a", JSON.stringify([{ at: "2026-09-02", summary, turns: 3 }]));
+    const items = store.browserEmilys();
+    expect(items.map((i) => i.slug)).toEqual(["a", "b"]);
+    expect(items[0]).toMatchObject({ createdAt: "2026-09-01", results: [{ turns: 3 }] });
+    expect(items[1]).toMatchObject({ draft, results: [] });
+  });
+
+  it("imports once, keeps the local copy and marks the browser as imported", async () => {
+    mem.set("emily:list", JSON.stringify(["a"]));
+    mem.set("emily:config:a", JSON.stringify({ slug: "a", draft }));
+    actions.importBrowserEmilys.mockResolvedValue(1);
+    expect(await store.importBrowserEmilys()).toBe(1);
+    expect(mem.has("emily:config:a")).toBe(true);
+    expect(store.browserEmilys()).toEqual([]);
   });
 });

@@ -10,8 +10,10 @@ import { dict, useLang, type Lang } from "./i18n";
 import { InterviewLive, SuccessReport } from "./interview-live";
 import {
   deleteEmily,
+  importBrowserEmilys,
   saveEmilyTranslation,
   saveResultTranslation,
+  useBrowserEmilyCount,
   type SavedEmily,
   type SavedResult,
 } from "./store";
@@ -25,15 +27,61 @@ const date = (iso: string, lang: Lang) =>
 const dateTime = (iso: string, lang: Lang) =>
   new Date(iso).toLocaleString(lang, { dateStyle: "medium", timeStyle: "short" });
 
-/** "Mis Emilys": every Emily created in this browser, saved under its project name. */
+/** Load error, or the one-time import of this browser's pre-database Emilys. */
+function SavedNotice({ error }: { error: string }) {
+  const { t } = useLang();
+  const count = useBrowserEmilyCount();
+  const [state, setState] = useState<"idle" | "busy" | number | "failed">("idle");
+  if (error)
+    return (
+      <p
+        role="alert"
+        className="rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300"
+      >
+        {t.loadError}
+      </p>
+    );
+  if (typeof state === "number")
+    return (
+      <p
+        role="status"
+        className="rounded-xl bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300"
+      >
+        {t.importDone(state)}
+      </p>
+    );
+  if (!count) return null;
+  return (
+    <div className="border-accent/30 bg-accent-soft/50 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-5 py-4">
+      <div className="space-y-0.5 text-sm">
+        <p className="font-medium">{t.importTitle(count)}</p>
+        <p className="text-muted">{state === "failed" ? t.loadError : t.importBody}</p>
+      </div>
+      <button
+        className={`${primary} px-4 py-2 text-sm`}
+        disabled={state === "busy"}
+        onClick={() => {
+          setState("busy");
+          importBrowserEmilys().then(setState, () => setState("failed"));
+        }}
+      >
+        {state === "busy" ? t.importing : t.importBtn}
+      </button>
+    </div>
+  );
+}
+
+/** "Mis Emilys": every saved Emily (from the database), under its project name. */
 export function EmilyList({
   emilys,
   results,
+  error,
   onMode,
   onFeed,
   onCreate,
 }: {
   emilys: SavedEmily[];
+  error: string;
   results: SavedResult[];
   onMode: (m: OrbMode | null) => void;
   onFeed: (m: Msg[]) => void;
@@ -62,6 +110,7 @@ export function EmilyList({
   if (!emilys.length)
     return (
       <div className="my-auto max-w-md space-y-4 py-16">
+        <SavedNotice error={error} />
         <h2 className="text-3xl font-semibold tracking-[-0.03em]">{t.noEmilysTitle}</h2>
         <p className="text-muted">{t.noEmilysBody}</p>
         <button className={primary} onClick={onCreate}>
@@ -82,6 +131,7 @@ export function EmilyList({
 
   return (
     <div className="space-y-6 py-8">
+      <SavedNotice error={error} />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-3xl font-semibold tracking-[-0.03em]">{t.myEmilys}</h2>
@@ -149,7 +199,7 @@ export function EmilyList({
                   <button
                     className={`${quiet} border-red-500/40 px-4 py-2 text-red-600 hover:border-red-500 hover:text-red-600 dark:text-red-400`}
                     onClick={() => {
-                      deleteEmily(slug);
+                      void deleteEmily(slug);
                       setConfirming(null);
                     }}
                     onBlur={() => setConfirming(null)}
@@ -281,7 +331,7 @@ function ResultItem({ r: saved, emily }: { r: SavedResult; emily?: SavedEmily })
     saved.summary,
     lang === saved.locale ? saved.summary : saved.translations?.[lang],
     () => translateSummary(saved.summary, lang),
-    (s) => saveResultTranslation(saved.slug, saved.at, lang, s),
+    (s) => saveResultTranslation(saved.id, lang, s),
   );
   const r = { ...saved, summary };
   return (

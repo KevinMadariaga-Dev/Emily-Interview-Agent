@@ -26,8 +26,8 @@ export function InterviewLive({
   onMode: (m: OrbMode | null) => void;
   onFeed: (m: Msg[]) => void;
   onExit?: () => void;
-  /** When set, the result is saved under this Emily (shown in "Resultados"). */
-  slug?: string;
+  /** The saved Emily the result is stored under (shown in "Resultados"). */
+  slug: string;
 }) {
   const { t, setLang } = useLang();
   const [typed, setTyped] = useState("");

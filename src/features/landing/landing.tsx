@@ -11,6 +11,7 @@ import {
   translateDraft,
 } from "./ai";
 import {
+  answerKind,
   missingFields,
   presets,
   toQuestions,
@@ -20,8 +21,9 @@ import {
   type PresetId,
   type QuestionKind,
   type VoiceId,
+  toSlug,
 } from "./config";
-import { dict, LangProvider, useLang, type Lang } from "./i18n";
+import { dict, LangProvider, useLang, type Lang, type Strings } from "./i18n";
 import { InterviewLive } from "./interview-live";
 import {
   ArrowDown,
@@ -41,19 +43,9 @@ import {
 } from "./icons";
 import { BubbleTrail, field, IconBtn, micError, primary, quiet, type Msg } from "./ui";
 import { EmilyList, ResultsList } from "./saved-views";
-import { saveEmily, uniqueSlug, useSavedEmilys } from "./store";
+import { saveEmily, useSavedEmilys } from "./store";
 import { useEmilyVoice } from "./use-emily-voice";
 import { VoiceOrb, type OrbMode } from "./voice-orb";
-
-// ponytail: creation is client-only (no DB yet); wire "Crear Emily" to createTemplateWithLink.
-
-const toSlug = (s: string) =>
-  s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 
 type Created = {
   slug: string;
@@ -275,10 +267,13 @@ export function Landing() {
                   : ""
             }`}
           >
-            {section === "emilys" ? (
+            {section !== "crear" && !saved.ready ? (
+              <p className="text-muted my-auto py-16 text-sm">…</p>
+            ) : section === "emilys" ? (
               <EmilyList
                 emilys={saved.emilys}
                 results={saved.results}
+                error={saved.error}
                 onMode={setVoiceMode}
                 onFeed={setFeed}
                 onCreate={() => go("crear")}
@@ -358,8 +353,6 @@ export function Landing() {
                   />
                 ) : (
                   <ConfigureForm
-                    onVoiceMode={setVoiceMode}
-                    onFeed={setFeed}
                     onCreate={(c) => {
                       setVoiceMode(null);
                       setFeed([]);
@@ -389,28 +382,12 @@ type Assist = "voice" | "preset" | null;
 function ConfigureForm({
   onCreate,
   onClose,
-  onVoiceMode,
-  onFeed,
 }: {
   onCreate: (c: Created) => void;
   onClose: () => void;
-  onVoiceMode: (m: OrbMode | null) => void;
-  onFeed: (m: Msg[]) => void;
 }) {
   const { lang, setLang, t } = useLang();
-  const [d, setD] = useState<Omit<Draft, "questions">>({
-    recipientName: "",
-    company: "",
-    project: "",
-    objective: "",
-    areas: [],
-    locale: lang,
-    status: "active",
-    expires: "",
-    noExpiry: false,
-    voice: "coral",
-    reportEmail: "",
-  });
+  const [d, setD] = useState<Omit<Draft, "questions">>(() => emptyDraft(lang));
   const [questions, setQuestions] = useState<Q[]>([{ id: 0, text: "", kind: "abierta" }]);
   const [refining, setRefining] = useState(false);
   const [refineNote, setRefineNote] = useState("");
@@ -419,7 +396,10 @@ function ConfigureForm({
   const [status, setStatus] = useState({ voice: false, llm: false });
   const [flash, setFlash] = useState(0); // bumps when AI fills fields → brief highlight
   const [langNote, setLangNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [translating, setTranslating] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false); // "delete the setup progress?" alert
   const nextId = useRef(1);
 
   useEffect(() => {
@@ -459,10 +439,14 @@ function ConfigureForm({
    * The ES/EN switch: UI language, the language Emily will speak, and — when there is content —
    * an AI translation of project, goal, questions and areas into the new language.
    */
-  async function changeLang(next: Lang) {
-    if (next === lang || translating) return;
-    const nt = dict[next];
-    setLang(next);
+  async function changeLang(next: Lang, { ui = true } = {}) {
+    if (translating) return;
+    if (ui) {
+      if (next === lang) return;
+      setLang(next);
+    }
+    if (next === d.locale) return; // the content is already in that language
+    const nt = dict[ui ? next : lang]; // notes in the screen's language
     set("locale", next);
     setLangNote("");
     const hasContent = draft.objective.trim() || draft.questions.length || draft.areas.length;
@@ -483,6 +467,16 @@ function ConfigureForm({
     }
   }
 
+  /** Starts over: every field empty (the voice studio's "delete progress"). */
+  function reset() {
+    setD(emptyDraft(lang));
+    setQuestions([{ id: nextId.current++, text: "", kind: "abierta" }]);
+    setAreaDraft("");
+    setRefineNote("");
+    setLangNote("");
+    setSaveError("");
+  }
+
   function addArea() {
     const a = areaDraft.trim();
     if (a && !d.areas.includes(a)) set("areas", [...d.areas, a]);
@@ -497,13 +491,25 @@ function ConfigureForm({
     setQuestions(copy);
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (missingFields(draft).length) return;
+    await create();
+  }
+
+  async function create() {
+    if (missingFields(draft).length || saving) return;
     const fmt =
       d.expires && new Date(`${d.expires}T23:59`).toLocaleDateString(lang, { dateStyle: "long" });
-    const slug = uniqueSlug(toSlug(d.project) || "entrevista");
-    saveEmily(slug, draft);
+    setSaving(true);
+    setSaveError("");
+    let slug: string;
+    try {
+      slug = await saveEmily(draft);
+    } catch {
+      return setSaveError(t.saveError);
+    } finally {
+      setSaving(false);
+    }
     onCreate({
       slug,
       url: `${DOMAIN}/${slug}`,
@@ -518,26 +524,58 @@ function ConfigureForm({
   }
 
   const hl = flash ? "animate-fill-flash" : "";
+  // Anything worth keeping: closing asks first (voice answers or typed fields aren't lost by mistake).
+  const hasData = !!(
+    d.project.trim() ||
+    d.objective.trim() ||
+    d.recipientName.trim() ||
+    d.company.trim() ||
+    d.reportEmail.trim() ||
+    d.areas.length ||
+    filled.length
+  );
+
+  // Esc inside the alert = continue.
+  useEffect(() => {
+    if (!confirmClose) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setConfirmClose(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmClose]);
 
   if (assist === "voice")
     return (
-      <VoiceSetup
+      <VoiceStudio
         draft={draft}
         openai={status.voice}
         onPatch={applyPatch}
-        onMode={onVoiceMode}
-        onFeed={onFeed}
-        onFinish={() => {
-          onVoiceMode(null);
-          onFeed([]);
+        onLang={(l) => void changeLang(l)}
+        onEdit={() => {
           setAssist(null);
           setFlash((n) => n + 1);
         }}
+        onDiscard={() => {
+          reset();
+          setAssist(null);
+        }}
+        onCreate={() => void create()}
+        saving={saving}
+        saveError={saveError}
       />
     );
 
   return (
-    <form onSubmit={submit} className="space-y-8">
+    <form onSubmit={(e) => void submit(e)} className="space-y-8">
+      {confirmClose && (
+        <ExitAlert
+          onDiscard={() => {
+            reset();
+            setConfirmClose(false);
+            onClose();
+          }}
+          onContinue={() => setConfirmClose(false)}
+        />
+      )}
       <header className="flex items-start justify-between gap-4">
         <div className="space-y-2">
           <h2 className="text-3xl font-semibold tracking-[-0.03em] md:text-4xl">{t.configure}</h2>
@@ -569,7 +607,7 @@ function ConfigureForm({
           />
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => (hasData ? setConfirmClose(true) : onClose())}
             aria-label={t.close}
             className="text-muted hover:bg-accent-soft hover:text-accent grid h-10 w-10 place-items-center rounded-full transition"
           >
@@ -660,17 +698,31 @@ function ConfigureForm({
             />
           </Field>
 
-          <Field label={t.linkStatus}>
-            <Segmented
-              label={t.linkStatus}
-              value={d.status}
-              onChange={(v) => set("status", v)}
-              options={[
-                ["active", t.active],
-                ["paused", t.paused],
-              ]}
-            />
-          </Field>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <Field label={t.linkStatus} hint={t.linkStatusHint}>
+              <Segmented
+                label={t.linkStatus}
+                value={d.status}
+                onChange={(v) => set("status", v)}
+                options={[
+                  ["active", t.active],
+                  ["paused", t.paused],
+                ]}
+              />
+            </Field>
+            {/* The language Emily interviews in (the screen's language doesn't change) */}
+            <Field label={t.emilyLang} hint={t.emilyLangHint}>
+              <Segmented
+                label={t.emilyLang}
+                value={d.locale}
+                onChange={(v) => void changeLang(v, { ui: false })}
+                options={[
+                  ["es", "Español"],
+                  ["en", "English"],
+                ]}
+              />
+            </Field>
+          </div>
 
           <Field label={t.voice} hint={t.voiceHint}>
             <VoicePicker value={d.voice} locale={d.locale} onChange={(v) => set("voice", v)} />
@@ -876,8 +928,13 @@ function ConfigureForm({
                 .join(", "),
             )}
         </p>
-        <button className={primary} disabled={missingFields(draft).length > 0}>
-          {t.create} <ArrowRight className="h-4 w-4" />
+        {saveError && (
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            {saveError}
+          </p>
+        )}
+        <button className={primary} disabled={missingFields(draft).length > 0 || saving}>
+          {saving ? t.saving : t.create} <ArrowRight className="h-4 w-4" />
         </button>
       </div>
     </form>
@@ -921,243 +978,694 @@ function AssistCard({
   );
 }
 
+const TRANSCRIPT_KEY = "emily:transcript"; // per-browser preference
+
+function readTranscriptPref() {
+  try {
+    return localStorage.getItem(TRANSCRIPT_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
 /**
- * Voice mode: only the conversation. Emily talks, listens hands-free (stops on silence), and
- * each answer fills the form behind the scenes. "Terminar" returns to the filled fields.
+ * Setup by voice, full screen like its own landing: Emily big in the middle. The user picks a
+ * language (Emily then speaks only that one), she asks what's needed to create the Emily, and the
+ * conversation rises under her without scrolling (optional transcript). She never asks for the
+ * report email — that's added in the settings — and ends with a summary: Edit or Finish.
  */
-function VoiceSetup({
+function VoiceStudio({
   draft,
   openai,
   onPatch,
-  onMode,
-  onFeed,
-  onFinish,
+  onLang,
+  onEdit,
+  onDiscard,
+  onCreate,
+  saving,
+  saveError,
 }: {
   draft: Draft;
   openai: boolean;
   onPatch: (p: Patch) => void;
-  onMode: (m: OrbMode | null) => void;
-  onFeed: (m: Msg[]) => void;
-  onFinish: () => void;
+  onLang: (l: Lang) => void;
+  onEdit: () => void;
+  onDiscard: () => void;
+  onCreate: () => void;
+  saving: boolean;
+  saveError: string;
 }) {
-  const { t } = useLang();
-  const [msgs, setMsgs] = useState<Msg[]>([{ from: "emily", text: t.greeting }]);
+  const { lang, t } = useLang();
+  const [phase, setPhase] = useState<"pick" | "talk" | "review">("pick");
+  const [mode, setMode] = useState<OrbMode>("listening");
+  const [transcript, setTranscript] = useState(readTranscriptPref);
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [keyboard, setKeyboard] = useState(false);
   const [typed, setTyped] = useState("");
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState("");
-  const voice = useEmilyVoice({ openai, locale: draft.locale, voice: draft.voice, onMode });
+  const [exitAsk, setExitAsk] = useState(false); // "delete the setup progress?" alert
+  const voice = useEmilyVoice({
+    openai,
+    locale: draft.locale,
+    voice: draft.voice,
+    onMode: setMode,
+  });
   const draftRef = useRef(draft);
   const alive = useRef(true);
-  const typing = useRef(false); // a typed answer interrupted the recording: don't treat as silence
-  const started = useRef(false);
-  const listEnd = useRef<HTMLLIElement>(null);
+  const pendingTyped = useRef(""); // a typed answer, taken by the next listenText()
+  const lastSaid = useRef(""); // the user's previous answer (merged when they add to it)
+  const greeted = useRef(false);
 
   useEffect(() => {
     draftRef.current = draft;
   });
-  useEffect(() => {
-    onFeed(msgs);
-    listEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [msgs, onFeed]);
 
-  // Greet, then listen. Guarded so dev StrictMode's double effect doesn't greet twice.
+  // Full screen: no page scroll behind it.
   useEffect(() => {
     alive.current = true;
-    if (!started.current) {
-      started.current = true;
-      voice.unlock();
-      voice.say(t.greeting).then(() => void listenTurn());
-    }
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     return () => {
       alive.current = false;
+      document.body.style.overflow = overflow;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on open
   }, []);
 
-  async function listenTurn() {
+  // Esc = the X (asks before deleting); inside that alert, Esc = continue.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (exitAsk) keepGoing();
+      else askExit();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  // Greeting once the chosen language is applied (the voice hook speaks the current locale).
+  useEffect(() => {
+    if (phase !== "talk" || greeted.current) return;
+    greeted.current = true;
+    void voice.say(dict[draft.locale].greeting).then(() => listenTurn());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- start of the conversation only
+  }, [phase, draft.locale]);
+
+  function pick(next: Lang) {
+    voice.unlock(); // inside the click: the browser lets Emily's audio play
+    onLang(next); // UI + Emily's language (existing content is translated)
+    setMsgs([{ from: "emily", text: dict[next].greeting }]);
+    setPhase("talk");
+  }
+
+  function toggleTranscript() {
+    const next = !transcript;
+    setTranscript(next);
+    try {
+      localStorage.setItem(TRANSCRIPT_KEY, next ? "on" : "off");
+    } catch {}
+  }
+
+  function leave() {
+    alive.current = false;
+    voice.cancel();
+    onEdit();
+  }
+
+  /** The X: pause Emily and ask whether to delete the setup progress. */
+  function askExit() {
+    if (exitAsk) return;
+    alive.current = false;
+    voice.cancel();
+    setExitAsk(true);
+  }
+
+  /** "Continue": back in the studio; Emily listens again where the conversation was. */
+  function keepGoing() {
+    setExitAsk(false);
+    setThinking(false); // a reply in flight was dropped when the alert opened
+    alive.current = true;
+    if (phase === "talk") void listenTurn();
+  }
+
+  function discard() {
+    voice.cancel();
+    onDiscard();
+  }
+
+  function review() {
+    alive.current = false;
+    voice.cancel();
+    setPhase("review");
+  }
+
+  const L = () => dict[draftRef.current.locale]; // Emily's lines: always the chosen language
+  const youSaid = (text: string) => setMsgs((m) => [...m, { from: "you", text }]);
+
+  async function sayLine(line: string) {
+    setMsgs((m) => [...m, { from: "emily", text: line }]);
+    await voice.say(line);
+  }
+
+  /** Next answer: what the user says (hands-free, ends on silence) or types meanwhile. */
+  async function listenText(): Promise<string> {
+    const take = () => {
+      const v = pendingTyped.current;
+      pendingTyped.current = "";
+      return v;
+    };
+    if (pendingTyped.current) return take();
+    const heard = await voice.listen();
+    return pendingTyped.current ? take() : heard;
+  }
+
+  /** A line that expects an answer. If the user talks over Emily, she stops and asks. */
+  async function ask(line: string) {
+    setMsgs((m) => [...m, { from: "emily", text: line }]);
+    const interrupted = await voice.say(line, { interruptible: true });
+    if (!alive.current) return;
+    return interrupted ? bargeIn() : listenTurn();
+  }
+
+  async function listenTurn(): Promise<void> {
     if (!alive.current) return;
     setError("");
     try {
-      const text = await voice.listen();
+      const text = await listenText();
       if (!alive.current) return;
-      if (typing.current) return void (typing.current = false);
       if (!text) {
-        await voice.say(t.didntHear);
+        await voice.say(L().didntHear);
         return listenTurn();
       }
       await handle(text);
     } catch (err) {
       setError(micError(err));
-      onMode("listening");
     }
   }
 
+  /** "That's all": goodbye, then the summary of everything configured. */
+  async function finish() {
+    await sayLine(L().vsClosing);
+    if (alive.current) setPhase("review");
+  }
+
   async function handle(text: string) {
-    setMsgs((m) => [...m, { from: "you", text }]);
+    youSaid(text);
+    lastSaid.current = text;
     setThinking(true);
     try {
-      const { patch, reply } = await fillFromSpeech(text, draftRef.current);
+      const { patch, reply, done } = await fillFromSpeech(text, draftRef.current);
       if (!alive.current) return;
-      onPatch(patch);
-      const complete = missingFields({ ...draftRef.current, ...patch } as Draft).length === 0;
-      const line = complete ? `${reply} ${t.pressFinish}` : reply;
-      setMsgs((m) => [...m, { from: "emily", text: line }]);
+      const fields: Patch = { ...patch };
+      delete fields.locale; // the language was chosen explicitly
+      onPatch(fields);
       setThinking(false);
-      await voice.say(line);
-      if (!complete) await listenTurn();
+      const complete =
+        done && missingFields({ ...draftRef.current, ...fields } as Draft).length === 0;
+      return complete ? finish() : ask(reply);
     } catch (err) {
       setThinking(false);
       setError(err instanceof Error ? err.message : t.somethingFailed);
     }
   }
 
+  /** The user talked over Emily: "anything else?", then merge it with what they said before. */
+  async function bargeIn() {
+    try {
+      await sayLine(L().vsMore);
+      const more = await listenText();
+      if (!alive.current) return;
+      if (!more) return listenTurn();
+      youSaid(more);
+      await confirm(`${lastSaid.current} ${more}`.trim(), {});
+    } catch (err) {
+      setThinking(false);
+      setError(err instanceof Error ? micError(err) : t.somethingFailed);
+    }
+  }
+
+  /**
+   * Reads back what Emily understood from `text` (on top of the still-unsaved `pending` fields)
+   * and asks if it's right: yes → saved; no → "what should I change?" and confirm again.
+   */
+  async function confirm(text: string, pending: Patch): Promise<void> {
+    setThinking(true);
+    const { patch, reply, done } = await fillFromSpeech(text, {
+      ...draftRef.current,
+      ...pending,
+    } as Draft);
+    setThinking(false);
+    if (!alive.current) return;
+    const merged: Patch = { ...pending, ...patch };
+    delete merged.locale;
+    for (;;) {
+      await sayLine(L().vsNoted(notedSummary(draftRef.current, merged, text, L())));
+      const answer = await listenText();
+      if (!alive.current) return;
+      if (!answer) {
+        await voice.say(L().didntHear);
+        continue;
+      }
+      youSaid(answer);
+      const kind = answerKind(answer);
+      if (kind === "yes") {
+        onPatch(merged);
+        lastSaid.current = text;
+        const complete =
+          done && missingFields({ ...draftRef.current, ...merged } as Draft).length === 0;
+        return complete ? finish() : ask(`${L().vsSaved} ${reply}`);
+      }
+      if (kind === "no") {
+        await sayLine(L().vsFix);
+        const fix = await listenText();
+        if (!alive.current) return;
+        if (!fix) continue;
+        youSaid(fix);
+        return confirm(fix, merged);
+      }
+      return confirm(answer, merged); // they said the correction straight away
+    }
+  }
+
+  /** A typed answer replaces the recording in progress (or Emily's line being spoken). */
   function sendTyped() {
     const text = typed.trim();
     if (!text) return;
-    typing.current = voice.state === "recording";
-    voice.cancel();
+    pendingTyped.current = text;
     setTyped("");
-    void handle(text);
+    voice.cancel();
+    if (voice.state === "idle" && !thinking) void listenTurn(); // nothing was waiting for it
   }
 
-  const d = draft;
-  const captured = [
-    [d.recipientName || d.company ? t.capRecipient : "", !!(d.recipientName || d.company)],
-    [t.capProject, !!d.project.trim()],
-    [t.capObjective, d.objective.trim().length >= 10],
-    [t.nQuestions(d.questions.length), d.questions.length > 0],
-    [d.areas.length ? t.capAreas(d.areas.length) : "", d.areas.length > 0],
-    [d.expires ? t.capExpiry : "", !!d.expires],
-    [d.reportEmail ? t.capReport : "", !!d.reportEmail],
-  ].filter(([label]) => label) as [string, boolean][];
-
   const recording = voice.state === "recording";
-  const busy = thinking || voice.state === "transcribing";
-  const statusLine = recording
+  const busy = thinking || voice.state === "transcribing" || voice.state === "preparing";
+  const status = recording
     ? t.stRecording
     : voice.state === "transcribing"
       ? t.stTranscribing
       : thinking
         ? t.stFilling
-        : voice.state === "speaking"
-          ? t.stSpeaking
-          : "";
+        : voice.state === "preparing"
+          ? t.lThinking
+          : voice.state === "speaking"
+            ? t.stSpeaking
+            : "";
+  const shown = msgs.slice(-4);
 
   return (
-    <section aria-label={t.byVoice} className="flex min-h-[70dvh] flex-col gap-5">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <h2 className="text-3xl font-semibold tracking-[-0.03em]">{t.voiceTitle}</h2>
-          <p className="text-muted text-sm">
-            {openai ? t.voiceOpenai : t.voiceBrowser} · {t.speakOrType}
-          </p>
-        </div>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={t.voiceTitle}
+      className="bg-accent-deep fixed inset-0 z-50 flex flex-col overflow-hidden px-6 py-6 text-white transition-opacity duration-300 ease-out md:px-10 starting:opacity-0"
+    >
+      <header className="flex items-center justify-between gap-4">
+        <p className="text-sm font-semibold tracking-[0.3em] uppercase">
+          NEO<span className="text-violet-300">era</span>
+        </p>
         <button
           type="button"
-          className={primary}
-          onClick={() => {
-            alive.current = false;
-            voice.cancel();
-            onFinish();
-          }}
+          onClick={askExit}
+          aria-label={t.vsExit}
+          className="grid h-10 w-10 place-items-center rounded-full text-violet-100 transition-colors hover:bg-white/10"
         >
-          <CheckIcon className="h-4 w-4" /> {t.finish}
+          <XIcon />
         </button>
       </header>
 
-      {captured.length > 0 && (
-        <ul aria-label={t.captured} className="flex flex-wrap gap-2">
-          {captured.map(([label, ok]) => (
-            <li
-              key={label}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-[opacity,scale] duration-200 ease-out starting:scale-95 starting:opacity-0 ${
-                ok ? "bg-accent-soft text-accent" : "bg-border/60 text-muted"
-              }`}
-            >
-              {ok && <CheckIcon className="h-3.5 w-3.5" />} {label}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <ol
-        aria-live="polite"
-        className="border-border bg-card flex-1 space-y-3 overflow-y-auto rounded-2xl border p-5"
+      <main
+        className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-6 ${
+          phase === "pick" ? "" : "md:flex-row md:gap-16 lg:gap-24"
+        }`}
       >
-        {msgs.map((m, i) => (
-          <li
-            key={i}
-            className={`flex transition-[opacity,translate] duration-200 ease-out starting:translate-y-1 starting:opacity-0 ${
-              m.from === "you" ? "justify-end" : ""
-            }`}
-          >
-            <p
-              className={`max-w-[80%] rounded-2xl px-4 py-2.5 leading-relaxed ${
-                m.from === "emily"
-                  ? "bg-accent-soft/70 rounded-tl-sm"
-                  : "bg-accent text-accent-foreground rounded-tr-sm"
+        {/* Emily (left while talking, centered while picking the language) */}
+        <div className="flex shrink-0 flex-col items-center gap-6">
+          <div className="md:scale-125">
+            <VoiceOrb mode={phase === "talk" ? mode : "listening"} />
+          </div>
+          {phase !== "pick" && (
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-1.5 text-sm font-medium text-violet-100 backdrop-blur">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  recording ? "animate-pulse bg-emerald-300" : "animate-pulse bg-fuchsia-300"
+                }`}
+              />
+              <span key={status} className="animate-rise">
+                {status || (mode === "speaking" ? t.speaking : t.listening)}
+              </span>
+            </span>
+          )}
+        </div>
+
+        {phase === "pick" ? (
+          <div className="animate-rise flex flex-col items-center gap-6 text-center">
+            <div className="space-y-1">
+              <h1 className="text-2xl font-semibold tracking-[-0.02em] md:text-3xl">
+                {dict.es.vsChoose}
+              </h1>
+              <p className="text-violet-200">{dict.en.vsChoose}</p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-3">
+              {(
+                [
+                  ["es", "Español"],
+                  ["en", "English"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => pick(id)}
+                  className="text-accent-deep min-w-36 rounded-full bg-white px-7 py-3.5 text-[15px] font-semibold shadow-[0_12px_32px_-12px_rgb(0_0_0/0.6)] transition-[translate,scale] duration-160 ease-out hover:-translate-y-px active:scale-[0.97]"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={transcript}
+              onClick={toggleTranscript}
+              className="flex items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5"
+            >
+              <span
+                className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${
+                  transcript ? "bg-fuchsia-300" : "bg-white/20"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ease-out ${
+                    transcript ? "translate-x-5" : ""
+                  }`}
+                />
+              </span>
+              <span>
+                <span className="block text-sm font-medium">{t.vsTranscript}</span>
+                <span className="block text-xs text-violet-200">{t.vsTranscriptHint}</span>
+              </span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex w-full max-w-2xl min-w-0 flex-col items-center gap-6">
+            {/* The conversation, right of Emily: last lines only, older ones fade — no scroll. */}
+            <ol
+              aria-live="polite"
+              className="flex h-56 w-full flex-col justify-end gap-2.5 overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_35%)] md:h-[22rem]"
+            >
+              {transcript &&
+                shown.map((m, i) => (
+                  <li
+                    key={msgs.length - shown.length + i}
+                    className={`flex transition-[opacity,translate] duration-300 ease-out starting:translate-y-3 starting:opacity-0 ${
+                      m.from === "you" ? "justify-end" : "justify-start"
+                    }`}
+                  >
+                    <p
+                      className={`max-w-[85%] rounded-2xl px-4 py-2.5 leading-relaxed ${
+                        m.from === "emily"
+                          ? "rounded-bl-sm bg-white/12 text-white"
+                          : "rounded-br-sm bg-fuchsia-300/25 text-fuchsia-50"
+                      }`}
+                    >
+                      {m.text}
+                    </p>
+                  </li>
+                ))}
+              {transcript && recording && voice.interim && (
+                <li className="flex justify-end">
+                  <p className="max-w-[85%] rounded-2xl border border-dashed border-white/30 px-4 py-2.5 text-violet-100 italic">
+                    {voice.interim}
+                  </p>
+                </li>
+              )}
+            </ol>
+
+            {error && (
+              <p role="alert" className="max-w-md text-center text-sm text-red-200">
+                {error}
+              </p>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Controls centered at the bottom of the screen */}
+      {phase === "talk" && (
+        <footer className="flex flex-col items-center gap-3 pt-4 pb-2">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={recording ? voice.stop : () => void listenTurn()}
+              disabled={busy || voice.state === "speaking"}
+              aria-label={recording ? t.stopTalking : t.talk}
+              className={`grid h-14 w-14 place-items-center rounded-full shadow-lg transition-[scale,background-color,opacity] duration-160 ease-out active:scale-[0.95] disabled:opacity-40 ${
+                recording ? "bg-white text-red-500" : "bg-white/15 text-white"
               }`}
             >
-              {m.text}
-            </p>
-          </li>
-        ))}
-        {recording && voice.interim && (
-          <li className="flex justify-end">
-            <p className="border-accent/40 text-muted max-w-[80%] rounded-2xl border border-dashed px-4 py-2.5">
-              {voice.interim}
-            </p>
-          </li>
-        )}
-        <li ref={listEnd} aria-hidden />
-      </ol>
-
-      {error && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
-      )}
-
-      <div className="space-y-2">
-        <p className="text-muted flex h-5 items-center gap-2 text-sm">
-          {(busy || recording) && (
-            <span
-              className={`h-2 w-2 rounded-full ${recording ? "animate-pulse bg-red-500" : "bg-accent animate-pulse"}`}
-            />
-          )}
-          {statusLine}
-        </p>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={recording ? voice.stop : () => void listenTurn()}
-            disabled={busy || voice.state === "speaking"}
-            aria-label={recording ? t.stopTalking : t.talk}
-            className={`grid h-12 w-12 shrink-0 place-items-center rounded-full text-white shadow-lg transition-[scale,background-color] duration-160 ease-out active:scale-[0.95] disabled:opacity-40 ${
-              recording ? "bg-red-500" : "bg-accent"
-            }`}
-          >
-            {recording ? <StopIcon /> : <MicIcon />}
-          </button>
-          <input
-            className={field}
-            placeholder={t.typePh}
-            value={typed}
-            disabled={busy}
-            onChange={(e) => setTyped(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              {recording ? <StopIcon /> : <MicIcon />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setKeyboard((k) => !k)}
+              className="rounded-full border border-white/20 px-5 py-2.5 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10"
+            >
+              {keyboard ? t.pHideKb : t.pTypeAnswer}
+            </button>
+            <button
+              type="button"
+              onClick={review}
+              className="rounded-full border border-white/20 px-5 py-2.5 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10"
+            >
+              {t.vsReview}
+            </button>
+          </div>
+          {keyboard && (
+            <form
+              className="flex w-full max-w-lg items-center gap-2 transition-[opacity,translate] duration-200 ease-out starting:translate-y-1 starting:opacity-0"
+              onSubmit={(e) => {
                 e.preventDefault();
                 sendTyped();
-              }
-            }}
-          />
-          <IconBtn label={t.sendTyped} disabled={!typed.trim() || busy} onClick={sendTyped}>
-            <SendIcon className="h-4 w-4" />
-          </IconBtn>
+              }}
+            >
+              <input
+                className="w-full rounded-full border border-white/20 bg-white/10 px-5 py-3 text-white placeholder:text-violet-300 focus:border-white/60 focus:outline-none"
+                placeholder={t.typePh}
+                value={typed}
+                disabled={busy}
+                onChange={(e) => setTyped(e.target.value)}
+                autoFocus
+              />
+              <button
+                aria-label={t.sendTyped}
+                disabled={!typed.trim() || busy}
+                className="text-accent-deep grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white disabled:opacity-40"
+              >
+                <SendIcon className="h-4 w-4" />
+              </button>
+            </form>
+          )}
+        </footer>
+      )}
+
+      {exitAsk && <ExitAlert onDiscard={discard} onContinue={keepGoing} />}
+
+      {phase === "review" && (
+        <ReviewModal
+          draft={draft}
+          lang={lang}
+          onEdit={leave}
+          onCreate={onCreate}
+          saving={saving}
+          saveError={saveError}
+        />
+      )}
+    </div>
+  );
+}
+
+const emptyDraft = (locale: Lang): Omit<Draft, "questions"> => ({
+  recipientName: "",
+  company: "",
+  project: "",
+  objective: "",
+  areas: [],
+  locale,
+  status: "active",
+  expires: "",
+  noExpiry: false,
+  voice: "coral",
+  reportEmail: "",
+});
+
+/** Leaving the voice studio: delete the setup progress, or keep going. */
+function ExitAlert({ onDiscard, onContinue }: { onDiscard: () => void; onContinue: () => void }) {
+  const { t } = useLang();
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-black/55 p-4 backdrop-blur-sm transition-opacity duration-200 ease-out starting:opacity-0">
+      <section
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="exit-title"
+        aria-describedby="exit-body"
+        className="bg-card text-foreground w-full max-w-md space-y-5 rounded-3xl p-6 shadow-2xl transition-[opacity,translate,scale] duration-200 ease-out md:p-7 starting:translate-y-2 starting:scale-[0.98] starting:opacity-0"
+      >
+        <div className="space-y-2">
+          <h2 id="exit-title" className="text-xl font-semibold tracking-[-0.01em]">
+            {t.vsDiscardTitle}
+          </h2>
+          <p id="exit-body" className="text-muted text-sm leading-relaxed">
+            {t.vsDiscardBody}
+          </p>
         </div>
-      </div>
-    </section>
+        <div className="flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={onDiscard}
+            className={`${quiet} border-red-500/40 text-red-600 hover:border-red-500 hover:text-red-600 dark:text-red-400`}
+          >
+            {t.vsDiscardYes}
+          </button>
+          <button type="button" className={primary} onClick={onContinue} autoFocus>
+            {t.vsContinue}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/** What Emily reads back for confirmation: only what the patch adds or changes. */
+function notedSummary(prev: Draft, p: Patch, said: string, t: Strings) {
+  const parts: string[] = [];
+  const who = [p.recipientName, p.company].filter(Boolean).join(" · ");
+  if (who) parts.push(`${t.factFor}: ${who}`);
+  if (p.project && p.project !== prev.project) parts.push(`${t.capProject}: ${p.project}`);
+  if (p.objective && p.objective !== prev.objective)
+    parts.push(`${t.capObjective}: ${p.objective}`);
+  const before = new Set(prev.questions.map((q) => q.text.trim().toLowerCase()));
+  const added = toQuestions(p.questions ?? []).filter(
+    (q) => !before.has(q.text.trim().toLowerCase()),
+  );
+  if (added.length)
+    parts.push(
+      `${t.vsNewQs(added.length)}: ${added
+        .slice(0, 3)
+        .map((q) => q.text)
+        .join(" ")}`,
+    );
+  if (p.areas?.length) parts.push(`${t.factAreas}: ${p.areas.join(", ")}`);
+  return parts.length ? parts.join(". ") : `“${said}”`;
+}
+
+/** End of the voice setup: everything Emily configured, then Edit (form) or Finish (create). */
+function ReviewModal({
+  draft,
+  lang,
+  onEdit,
+  onCreate,
+  saving,
+  saveError,
+}: {
+  draft: Draft;
+  lang: Lang;
+  onEdit: () => void;
+  onCreate: () => void;
+  saving: boolean;
+  saveError: string;
+}) {
+  const { t } = useLang();
+  const voice = voices.find((v) => v.id === draft.voice);
+  const missing = missingFields(draft);
+  const until =
+    draft.noExpiry || !draft.expires
+      ? ""
+      : new Date(`${draft.expires}T23:59`).toLocaleDateString(lang, { dateStyle: "long" });
+  const facts: [string, string][] = [
+    [t.capProject, draft.project || "—"],
+    [t.capObjective, draft.objective || "—"],
+    [t.factFor, [draft.recipientName, draft.company].filter(Boolean).join(" · ") || t.openLink],
+    [t.factLang, t.langOf[draft.locale]],
+    [t.factVoice, voice ? `${voice.name} · ${voice.desc[lang]}` : "—"],
+    [t.factLink, t.statusLine(draft.status === "active", until)],
+    [t.factReport, draft.reportEmail || t.vsEmailLater],
+    ...(draft.areas.length ? [[t.factAreas, draft.areas.join(", ")] as [string, string]] : []),
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/55 p-4 backdrop-blur-sm transition-opacity duration-200 ease-out starting:opacity-0">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="review-title"
+        className="bg-card text-foreground flex max-h-[92dvh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl shadow-2xl transition-[opacity,translate,scale] duration-300 ease-out starting:translate-y-3 starting:scale-[0.98] starting:opacity-0"
+      >
+        <div className="space-y-6 overflow-y-auto p-6 md:p-10">
+          <header className="space-y-1">
+            <h2 id="review-title" className="text-2xl font-semibold tracking-[-0.02em]">
+              {t.vsReviewTitle}
+            </h2>
+            <p className="text-muted text-sm">{t.vsReviewBody}</p>
+          </header>
+
+          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:gap-10">
+            <dl className="divide-border border-border divide-y rounded-2xl border px-5">
+              {facts.map(([label, value]) => (
+                <div key={label} className="grid gap-1 py-3 sm:grid-cols-[10rem_1fr] sm:gap-4">
+                  <dt className="text-muted text-sm">{label}</dt>
+                  <dd
+                    className={`text-sm ${value === t.vsEmailLater ? "text-accent font-medium" : ""}`}
+                  >
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
+            <div className="space-y-3">
+              <h3 className="font-semibold">
+                {t.willAsk} · {t.nQuestions(draft.questions.length)}
+              </h3>
+              <ol className="space-y-2">
+                {draft.questions.map((q, i) => (
+                  <li
+                    key={i}
+                    className="bg-accent-soft/50 flex items-start gap-3 rounded-xl px-4 py-3"
+                  >
+                    <span className="text-accent mt-0.5 text-sm font-semibold tabular-nums">
+                      {i + 1}.
+                    </span>
+                    <span className="flex-1 text-sm leading-relaxed">{q.text}</span>
+                    <KindTag kind={q.kind} />
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        </div>
+
+        <footer className="border-border flex flex-col items-center gap-3 border-t p-5">
+          {(missing.length > 0 || saveError) && (
+            <p role="alert" className="text-center text-sm text-red-600 dark:text-red-400">
+              {saveError || t.missing(missing.map((m) => t.missingNames[m]).join(", "))}
+            </p>
+          )}
+          <div className="grid w-full max-w-md grid-cols-2 gap-3">
+            <button type="button" className={`${quiet} w-full justify-center`} onClick={onEdit}>
+              {t.vsEdit}
+            </button>
+            <button
+              type="button"
+              className={`${primary} w-full justify-center`}
+              disabled={missing.length > 0 || saving}
+              onClick={onCreate}
+            >
+              {saving ? t.saving : t.finish} <CheckIcon className="h-4 w-4" />
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
   );
 }
 

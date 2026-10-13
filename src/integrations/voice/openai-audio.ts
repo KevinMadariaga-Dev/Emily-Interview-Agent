@@ -2,9 +2,14 @@ import "server-only";
 import { env, requireEnv } from "@/lib/env";
 
 const TTS_INSTRUCTIONS = {
-  es: "Habla SIEMPRE en español latinoamericano neutro, con acento latino natural, incluso al pronunciar marcas o palabras en inglés. Voz femenina cálida, clara, ritmo medio. Nunca cambies de idioma ni de acento.",
-  en: "Always speak in clear, neutral American English, even for Spanish names or words. Warm female voice, medium pace. Never switch language or accent.",
+  es: "Habla SIEMPRE en español latinoamericano neutro, con acento latino natural, incluso al pronunciar marcas o palabras en inglés. Voz femenina cálida y clara. Habla con calma y sin prisa, a un ritmo pausado (un poco más lento que una conversación normal), con pausas breves y naturales entre frases (sin silencios largos) y una entonación amable y profesional. Nunca cambies de idioma ni de acento.",
+  en: "Always speak in clear, neutral American English, even for Spanish names or words. Warm, clear female voice. Speak calmly and unhurriedly, at a relaxed pace (a little slower than normal conversation), with brief, natural pauses between sentences (no long silences) and a kind, professional tone. Never switch language or accent.",
 } as const;
+
+// OpenAI occasionally stalls mid-response (seen: a 2-minute TTS). Bound every call so the
+// interview never hangs: a line normally takes 1–4 s, a transcription 1–3 s.
+const TTS_TIMEOUT_MS = 20_000;
+const STT_TIMEOUT_MS = 30_000;
 
 /**
  * OpenAI speech-to-text and text-to-speech via fetch (no SDK).
@@ -24,12 +29,15 @@ export const openAiAudio = {
       method: "POST",
       headers: { Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}` },
       body: form,
+      signal: AbortSignal.timeout(STT_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`OpenAI STT ${res.status}: ${await res.text()}`);
     return ((await res.json()) as { text: string }).text;
   },
 
-  async speak(text: string, language: "es" | "en", voice?: string) {
+  /** The whole mp3 (buffered, not streamed: a stalled stream can't leave the browser waiting). */
+  async speak(text: string, language: "es" | "en", voice?: string): Promise<ArrayBuffer> {
+    const signal = AbortSignal.timeout(TTS_TIMEOUT_MS); // covers the response body too
     const res = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: {
@@ -48,8 +56,9 @@ export const openAiAudio = {
         }),
         response_format: "mp3",
       }),
+      signal,
     });
-    if (!res.ok || !res.body) throw new Error(`OpenAI TTS ${res.status}: ${await res.text()}`);
-    return res.body;
+    if (!res.ok) throw new Error(`OpenAI TTS ${res.status}: ${await res.text()}`);
+    return res.arrayBuffer();
   },
 };

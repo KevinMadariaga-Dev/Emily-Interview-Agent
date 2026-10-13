@@ -1,4 +1,8 @@
+import { loadEnvConfig } from "@next/env";
 import { defineConfig } from "drizzle-kit";
+
+// drizzle-kit doesn't read .env.local by itself: load it the same way Next does.
+loadEnvConfig(process.cwd());
 
 // Drizzle Kit config: generates SQL migrations from src/server/db/schema.
 export default defineConfig({

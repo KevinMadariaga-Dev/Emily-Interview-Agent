@@ -15,8 +15,11 @@ export function subscribeLevel(l: Listener) {
   };
 }
 
-/** Samples an AnalyserNode each frame, publishes RMS level, and calls `onFrame` with it. */
-export function meter(analyser: AnalyserNode, onFrame?: (level: number) => void) {
+/**
+ * Samples an AnalyserNode each frame and calls `onFrame` with the RMS level. `publish` also feeds
+ * the orb (off for background listeners, e.g. barge-in detection while Emily talks).
+ */
+export function meter(analyser: AnalyserNode, onFrame?: (level: number) => void, publish = true) {
   const data = new Uint8Array(analyser.fftSize);
   let raf = 0;
   const tick = () => {
@@ -24,13 +27,13 @@ export function meter(analyser: AnalyserNode, onFrame?: (level: number) => void)
     let sum = 0;
     for (const v of data) sum += ((v - 128) / 128) ** 2;
     const level = Math.min(1, Math.sqrt(sum / data.length) * 4);
-    publishLevel(level);
+    if (publish) publishLevel(level);
     onFrame?.(level);
     raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);
   return () => {
     cancelAnimationFrame(raf);
-    publishLevel(0);
+    if (publish) publishLevel(0);
   };
 }

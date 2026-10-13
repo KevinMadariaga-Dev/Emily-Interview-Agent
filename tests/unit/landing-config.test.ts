@@ -86,3 +86,12 @@ describe("normalizeDraft", () => {
     expect(normalizeDraft({ voice: "sage" }).voice).toBe("sage");
   });
 });
+
+describe("slugs", () => {
+  it("builds URL-safe slugs and picks the first free one", async () => {
+    const { freeSlug, toSlug } = await import("@/features/landing/config");
+    expect(toSlug("Boutique Luña · Café!")).toBe("boutique-luna-cafe");
+    expect(freeSlug("x", [])).toBe("x");
+    expect(freeSlug("x", ["x", "x-2"])).toBe("x-3");
+  });
+});
