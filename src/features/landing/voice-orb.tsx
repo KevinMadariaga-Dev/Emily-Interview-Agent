@@ -79,7 +79,7 @@ export function VoiceOrb({
 
   return (
     <div
-      className={`relative grid h-72 w-72 shrink-0 place-items-center transition-[scale] duration-500 ease-in-out motion-reduce:transition-none lg:h-[26rem] lg:w-[26rem] ${scale}`}
+      className={`relative grid h-56 w-56 shrink-0 sm:h-72 sm:w-72 place-items-center transition-[scale] duration-500 ease-in-out motion-reduce:transition-none lg:h-[26rem] lg:w-[26rem] ${scale}`}
       data-orb
       data-mode={mode}
       aria-hidden

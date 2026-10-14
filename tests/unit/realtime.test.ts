@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { normalizeDraft } from "@/features/landing/config";
-import { PROGRESS_TOOL, realtimeInstructions } from "@/features/landing/realtime-prompt";
+import {
+  PROGRESS_TOOL,
+  realtimeInstructions,
+  setupDirective,
+  setupInstructions,
+} from "@/features/landing/realtime-prompt";
 
 vi.mock("server-only", () => ({}));
 const { realtimeVoice } = await import("@/integrations/voice/openai-realtime");
@@ -66,5 +71,23 @@ describe("turn directives (the app steers every realtime reply)", () => {
     expect(turnDirective(draft("en"), 1, 2)).toMatch(
       /say goodbye in ONE sentence[\s\S]*No summary, no advice/,
     );
+  });
+});
+
+describe("realtime voice setup", () => {
+  it("asks for what's missing, in order, and never for the email", () => {
+    const empty = normalizeDraft({ locale: "es" });
+    const d = setupDirective(empty);
+    expect(d).toContain("nada");
+    expect(d).toMatch(/para quién es, el proyecto, el objetivo/);
+    expect(setupInstructions("es")).toMatch(/NUNCA pidas el correo/);
+  });
+
+  it("wraps up once the essentials are in", () => {
+    const d = setupDirective(draft("en"));
+    expect(d).toContain("for: Ana");
+    expect(d).toContain("2 questions");
+    expect(d).toMatch(/anything else.*setup_done/);
+    expect(setupInstructions("en")).toContain("SOLO en clear, neutral American English");
   });
 });

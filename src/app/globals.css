@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
+/* Declaring both schemes also opts out of the browser's forced dark mode (Chrome/Xiaomi auto-dark
+   repainted the light form in low-contrast greys): the page uses its own dark palette instead. */
 :root {
+  color-scheme: light dark;
   --background: #f7f6fb;
   --foreground: #17131f;
   --muted: #5f5a72;

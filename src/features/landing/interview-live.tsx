@@ -75,7 +75,7 @@ export function InterviewLive({
   const recording = voice.state === "recording";
 
   return (
-    <section aria-label={t.lTitle} className="flex min-h-[70dvh] flex-col gap-5">
+    <section aria-label={t.lTitle} className="flex min-h-[70dvh] flex-col gap-5 py-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <p className="text-accent text-sm font-medium">{t.lTitle}</p>
@@ -122,7 +122,7 @@ export function InterviewLive({
           <div className="flex min-h-0 flex-col gap-4">
             <ol
               aria-live="polite"
-              className="border-border bg-card max-h-[55dvh] min-h-64 flex-1 space-y-3 overflow-y-auto rounded-2xl border p-5"
+              className="border-border bg-card max-h-[55dvh] min-h-64 flex-1 space-y-3 overflow-y-auto rounded-2xl border p-4 sm:p-5"
             >
               {history.map((t, i) => (
                 <li
@@ -324,7 +324,7 @@ export function SuccessReport({
 
   return (
     <div className="space-y-6">
-      <div className="border-border bg-card grid items-center gap-6 rounded-2xl border p-6 md:grid-cols-[auto_1fr]">
+      <div className="border-border bg-card grid items-center gap-6 rounded-2xl border p-4 sm:p-6 md:grid-cols-[auto_1fr]">
         <div className="relative mx-auto h-36 w-36" role="img" aria-label={t.pctAria(pct)}>
           <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
             <circle cx="60" cy="60" r={R} fill="none" strokeWidth="10" className="stroke-border" />
@@ -383,7 +383,7 @@ export function SuccessReport({
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-        <dl className="border-border bg-card divide-border divide-y rounded-2xl border px-6">
+        <dl className="border-border bg-card divide-border divide-y rounded-2xl border px-4 sm:px-6">
           {summary.answers.map((a) => (
             <div key={a.question} className="space-y-1.5 py-4">
               <dt className="flex items-start justify-between gap-3 text-sm">
@@ -403,7 +403,7 @@ export function SuccessReport({
           <InfoList title={t.pains} items={summary.painPoints} />
           <InfoList title={t.insights} items={summary.insights} />
           {(summary.quotes?.length ?? 0) > 0 && (
-            <div className="border-border bg-card space-y-3 rounded-2xl border p-6">
+            <div className="border-border bg-card space-y-3 rounded-2xl border p-4 sm:p-6">
               <h3 className="font-semibold">{t.quotes}</h3>
               {summary.quotes.map((q) => (
                 <blockquote key={q} className="border-accent border-l-2 pl-3 text-sm italic">
@@ -490,7 +490,7 @@ function NotionNotice({ notion }: { notion: NotionStatus | "saving" | null }) {
 function InfoList({ title, items }: { title: string; items?: string[] }) {
   if (!items?.length) return null;
   return (
-    <div className="border-border bg-card space-y-3 rounded-2xl border p-6">
+    <div className="border-border bg-card space-y-3 rounded-2xl border p-4 sm:p-6">
       <h3 className="font-semibold">{title}</h3>
       <ul className="space-y-2">
         {items.map((x) => (

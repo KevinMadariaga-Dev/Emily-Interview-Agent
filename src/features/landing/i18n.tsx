@@ -17,7 +17,6 @@ const strings = {
       ["Resumen accionable", "Hallazgos, dolores y citas en tu correo y en Notion."],
     ] as [string, string][],
     configure: "Configura Emily",
-    exampleInterview: "Escucha una entrevista de ejemplo",
     // Aside / nav
     tagline: "Emily · entrevistadora con IA",
     speaking: "Emily está hablando",
@@ -121,6 +120,10 @@ const strings = {
     vsDiscardBody: "Se borrará todo lo que Emily anotó y la configuración quedará limpia.",
     vsDiscardYes: "Sí, borrar",
     vsContinue: "Continuar",
+    vcTitle: "Antes de usar la voz",
+    vcBody:
+      "Al usar la voz, tu audio se envía a OpenAI, un proveedor externo de IA, para procesarlo en tiempo real y generar una respuesta. No compartas información médica ni otros datos sensibles.",
+    vcCancel: "Cancelar",
     pause: "Pausar",
     resume: "Continuar",
     pausedNow: "En pausa · pulsa Continuar cuando quieras",
@@ -306,7 +309,6 @@ const strings = {
       ["Actionable summary", "Findings, pain points and quotes in your inbox and in Notion."],
     ] as [string, string][],
     configure: "Set up Emily",
-    exampleInterview: "Listen to a sample interview",
     tagline: "Emily · AI interviewer",
     speaking: "Emily is speaking",
     listening: "Emily is listening",
@@ -405,6 +407,10 @@ const strings = {
     vsDiscardBody: "Everything Emily noted will be deleted and the setup will start clean.",
     vsDiscardYes: "Yes, delete",
     vsContinue: "Continue",
+    vcTitle: "Before using voice",
+    vcBody:
+      "When you use voice, your audio is sent to OpenAI, a third-party AI provider, to process it in real time and generate a response. Don't share medical information or other sensitive data.",
+    vcCancel: "Cancel",
     pause: "Pause",
     resume: "Resume",
     pausedNow: "Paused · press Resume whenever you're ready",

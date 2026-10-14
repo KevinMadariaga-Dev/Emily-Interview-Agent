@@ -85,7 +85,7 @@ export function useEmilyVoice({
 }) {
   const [state, setState] = useState<VoiceState>("idle");
   const [interim, setInterim] = useState("");
-  const player = useRef<HTMLAudioElement | null>(null);
+  const player = useRef<{ pause: () => void } | null>(null); // the clip playing now
   const endTurn = useRef<(() => void) | null>(null); // stops the current recording
   const abortTurn = useRef<(() => void) | null>(null); // stops it and discards the audio
   const cancelled = useRef(false); // cancel() during a line: don't play it (or its fallback)
@@ -235,15 +235,23 @@ export function useEmilyVoice({
   ): Promise<"done" | "no-key"> {
     const parts = splitSentences(text);
     // Each chunk is fetched and its <audio> preloaded ahead: the next one starts with no gap.
-    const clips: Promise<{ a: HTMLAudioElement; url: string } | "no-key" | null>[] = [];
+    type Clip = { buf: AudioBuffer } | { a: HTMLAudioElement; url: string };
+    const clips: Promise<Clip | "no-key" | null>[] = [];
     const clip = (i: number) =>
-      (clips[i] ??= fetchClip(parts[i]!).then((blob) => {
+      (clips[i] ??= fetchClip(parts[i]!).then(async (blob) => {
         if (!(blob instanceof Blob)) return blob;
-        const url = URL.createObjectURL(blob);
-        const a = new Audio(url);
-        a.preload = "auto";
-        a.load();
-        return { a, url };
+        // Decoded into the AudioContext unlocked by the first tap: mobile browsers (iOS Safari
+        // above all) block a new <audio> started later, outside a gesture, so after the first
+        // turn Emily would go silent. The <audio> path stays only as a fallback.
+        try {
+          return { buf: await audioContext().decodeAudioData(await blob.arrayBuffer()) };
+        } catch {
+          const url = URL.createObjectURL(blob);
+          const a = new Audio(url);
+          a.preload = "auto";
+          a.load();
+          return { a, url };
+        }
       }));
     for (let i = 0; i < parts.length; i++) {
       const audio = await clip(i);
@@ -252,14 +260,52 @@ export function useEmilyVoice({
       if (i + 1 < parts.length) void clip(i + 1); // generated while this one plays
       // A piece that never arrived is skipped (it's on screen): a different voice would be worse.
       if (!audio) continue;
-      try {
-        await playClip(audio.a, parts[i]!, onAudible);
-      } finally {
-        URL.revokeObjectURL(audio.url);
+      if ("buf" in audio) {
+        await playBuffer(audio.buf, onAudible);
+      } else {
+        try {
+          await playClip(audio.a, parts[i]!, onAudible);
+        } finally {
+          URL.revokeObjectURL(audio.url);
+        }
       }
       if (stopped()) return "done";
     }
     return "done";
+  }
+
+  /** Plays a decoded clip through the (already unlocked) AudioContext; resolves when it ends or is paused. */
+  async function playBuffer(buf: AudioBuffer, onAudible: () => void) {
+    const ac = await awakeAudio();
+    return new Promise<void>((resolve) => {
+      const src = ac.createBufferSource();
+      const analyser = ac.createAnalyser();
+      analyser.fftSize = 1024;
+      src.buffer = buf;
+      src.connect(analyser).connect(ac.destination);
+      const stopMeter = meter(analyser);
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(guard);
+        stopMeter();
+        resolve();
+      };
+      // A context the phone suspended (call, app switch) never fires onended: don't hang.
+      const guard = setTimeout(done, buf.duration * 1000 + 3_000);
+      src.onended = done;
+      player.current = {
+        pause: () => {
+          try {
+            src.stop();
+          } catch {}
+          done();
+        },
+      };
+      src.start();
+      onAudible();
+    });
   }
 
   function playClip(a: HTMLAudioElement, text: string, onAudible: () => void) {
@@ -348,14 +394,20 @@ export function useEmilyVoice({
     };
   }
 
-  /** Records one turn; resolves with the transcript when the user stops talking (or `stop()`). */
-  async function listen(): Promise<string> {
+  /**
+   * Records one turn; resolves with the transcript when the user stops talking (or `stop()`).
+   * With `onSpeech` it records in the background (state untouched)
+   * and only switches to "recording", calling `onSpeech`, once the user actually talks: Emily keeps
+   * listening while she works out a reply. `discardTurn()` drops it. OpenAI voice only.
+   */
+  async function listen({ onSpeech }: { onSpeech?: () => void } = {}): Promise<string> {
     setInterim("");
-    if (openai && typeof MediaRecorder !== "undefined") return listenOpenAi();
+    if (openai && typeof MediaRecorder !== "undefined") return listenOpenAi(onSpeech);
+    if (onSpeech) return ""; // the browser recognizer can't listen in the background
     return listenBrowser();
   }
 
-  async function listenOpenAi(): Promise<string> {
+  async function listenOpenAi(onSpeech?: () => void): Promise<string> {
     const stream = await getMic();
     const type = recordingType();
     const rec = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream);
@@ -376,8 +428,13 @@ export function useEmilyVoice({
       silenceMs: SILENCE_MS,
       minSpeechMs: MIN_SPEECH_MS,
     });
+    let heard = !onSpeech;
     const stopMeter = meter(analyser, (level) => {
       if (turn.frame(level, performance.now()) && rec.state === "recording") rec.stop();
+      if (heard || !turn.spoke()) return;
+      heard = true;
+      set("recording");
+      onSpeech?.();
     });
     const maxTimer = setTimeout(() => rec.state === "recording" && rec.stop(), MAX_TURN_MS);
     endTurn.current = () => rec.state === "recording" && rec.stop();
@@ -388,7 +445,7 @@ export function useEmilyVoice({
 
     const stopped = new Promise<void>((r) => (rec.onstop = () => r()));
     rec.start();
-    set("recording");
+    if (!onSpeech) set("recording");
     await stopped;
 
     clearTimeout(maxTimer);
@@ -396,7 +453,7 @@ export function useEmilyVoice({
     source.disconnect(); // the stream stays open for the next turn
     endTurn.current = abortTurn.current = null;
     if (discard || !turn.spoke()) {
-      set("idle");
+      if (heard) set("idle");
       return "";
     }
 
@@ -462,7 +519,12 @@ export function useEmilyVoice({
 
   /** Call synchronously inside a click: browsers only allow audio started from a user gesture. */
   const unlock = useCallback(() => {
-    audioContext();
+    const ac = audioContext();
+    // iOS only unlocks the context once a sound starts inside the gesture: a silent tick.
+    const tick = ac.createBufferSource();
+    tick.buffer = ac.createBuffer(1, 1, 22_050);
+    tick.connect(ac.destination);
+    tick.start();
   }, []);
 
   /** Ends the current recording now (the pending `listen()` resolves with what was said). */
@@ -484,5 +546,11 @@ export function useEmilyVoice({
 
   useEffect(() => cancel, [cancel]);
 
-  return { state, interim, say, listen, stop, cancel, unlock };
+  /** Opens the microphone now (asks for permission); it stays open for the conversation. */
+  const openMic = useCallback(() => getMic().then(() => {}), []);
+
+  /** Drops the recording in progress (nothing is transcribed). */
+  const discardTurn = useCallback(() => abortTurn.current?.(), []);
+
+  return { state, interim, say, listen, stop, cancel, unlock, openMic, discardTurn };
 }

@@ -136,7 +136,7 @@ export function EmilyList({
           <h2 className="text-3xl font-semibold tracking-[-0.03em]">{t.myEmilys}</h2>
           <p className="text-muted text-sm">{t.createdHere(emilys.length)}</p>
         </div>
-        <button className={primary} onClick={onCreate}>
+        <button className={`${primary} w-full justify-center sm:w-auto`} onClick={onCreate}>
           <PlusIcon className="h-4 w-4" /> {t.newEmily}
         </button>
       </header>
@@ -149,7 +149,7 @@ export function EmilyList({
           return (
             <li
               key={slug}
-              className="border-border bg-card hover:border-accent/40 flex flex-col gap-4 rounded-2xl border p-5 transition-[border-color,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0"
+              className="border-border bg-card hover:border-accent/40 sm:p-5-[border-color,translate] flex flex-col gap-4 rounded-2xl border p-4 transition duration-200 ease-out starting:translate-y-2 starting:opacity-0"
             >
               <CardText e={e} />
               <ul className="flex flex-wrap gap-1.5 text-xs">
@@ -176,17 +176,25 @@ export function EmilyList({
               <p className="text-muted font-mono text-xs">
                 {LINK_BASE}/{slug} · {date(createdAt, lang)}
               </p>
-              <div className="mt-auto flex flex-wrap gap-2">
+              {/* Phones: a 2×2 grid of equal buttons; wider screens: one row (delete stays narrow). */}
+              <div className="mt-auto grid grid-cols-2 gap-2 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
                 <button
-                  className={`${primary} px-4 py-2 text-sm`}
+                  className={`${primary} justify-center px-3 py-2 text-sm`}
                   onClick={() => setTesting({ slug, draft, createdAt })}
                 >
-                  <MicIcon className="h-4 w-4" /> {t.test}
+                  <MicIcon className="h-4 w-4 shrink-0" /> {t.test}
                 </button>
-                <Link href={`/e/${slug}`} target="_blank" className={`${quiet} px-4 py-2`}>
+                <Link
+                  href={`/e/${slug}`}
+                  target="_blank"
+                  className={`${quiet} justify-center px-3 py-2`}
+                >
                   {t.openPage} <ArrowRight className="h-4 w-4" />
                 </Link>
-                <button className={`${quiet} px-4 py-2`} onClick={() => void copy(slug)}>
+                <button
+                  className={`${quiet} justify-center px-3 py-2`}
+                  onClick={() => void copy(slug)}
+                >
                   {copied === slug ? (
                     <CheckIcon className="h-4 w-4" />
                   ) : (
@@ -196,7 +204,7 @@ export function EmilyList({
                 </button>
                 {confirming === slug ? (
                   <button
-                    className={`${quiet} border-red-500/40 px-4 py-2 text-red-600 hover:border-red-500 hover:text-red-600 dark:text-red-400`}
+                    className={`${quiet} justify-center border-red-500/40 px-4 py-2 text-red-600 hover:border-red-500 hover:text-red-600 dark:text-red-400`}
                     onClick={() => {
                       void deleteEmily(slug);
                       setConfirming(null);
@@ -207,7 +215,7 @@ export function EmilyList({
                   </button>
                 ) : (
                   <button
-                    className={`${quiet} px-3 py-2`}
+                    className={`${quiet} justify-center px-3 py-2`}
                     aria-label={t.deleteAria(draft.project)}
                     onClick={() => setConfirming(slug)}
                   >
@@ -334,10 +342,11 @@ function ResultItem({ r: saved, emily }: { r: SavedResult; emily?: SavedEmily })
   );
   const r = { ...saved, summary };
   return (
-    <li lang={lang} className="border-border bg-card rounded-2xl border p-5">
+    <li lang={lang} className="border-border bg-card rounded-2xl border p-4 sm:p-5">
       <details className="group">
-        <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 space-y-1">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 sm:items-start">
+          {/* Phones: score and "see detail" on top, the summary below at full width. */}
+          <div className="order-last min-w-0 flex-1 basis-full space-y-1 sm:order-none sm:basis-0">
             <p className="text-accent text-xs font-medium">
               {project} · {dateTime(r.at, lang)}
             </p>
@@ -358,8 +367,12 @@ function ResultItem({ r: saved, emily }: { r: SavedResult; emily?: SavedEmily })
               {t.verdictLabel[verdict(coverage(r.summary.answers)).tone]}
             </span>
           )}
-          <span className="text-muted text-sm group-open:hidden">{t.seeDetail}</span>
-          <span className="text-muted hidden text-sm group-open:inline">{t.hide}</span>
+          <span className="text-muted ml-auto text-sm group-open:hidden sm:ml-0">
+            {t.seeDetail}
+          </span>
+          <span className="text-muted ml-auto hidden text-sm group-open:inline sm:ml-0">
+            {t.hide}
+          </span>
         </summary>
         <div className="mt-5">
           {r.summary.objective ? (

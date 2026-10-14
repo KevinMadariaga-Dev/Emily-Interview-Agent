@@ -84,3 +84,70 @@ export function turnDirective(d: Draft, current: number, asked: number) {
     ? `AHORA: ${followUp}reconoce la respuesta en 2 a 5 palabras y haz la pregunta ${q(current + 1)}, casi textual. Llama report_progress(asking=${current + 1}, done=false).`
     : `NOW: ${followUp}acknowledge the answer in 2 to 5 words and ask question ${q(current + 1)}, almost word for word. Call report_progress(asking=${current + 1}, done=false).`;
 }
+
+// ── Voice setup (the admin configures an Emily by talking to her) ───────────────────────────────
+
+/** The setup model calls it when the user says there's nothing more to add. */
+export const SETUP_DONE_TOOL = {
+  type: "function",
+  name: "setup_done",
+  description:
+    "Call it, silently, when the user says there is nothing more to add (that's all, no, nothing else).",
+  parameters: { type: "object", properties: {} },
+} as const;
+
+/**
+ * Voice setup on the realtime model: Emily only talks. The fields are filled in the background by
+ * fillFromSpeech from what the user says; each turn the app tells her what is already noted and
+ * what's missing (setupDirective).
+ */
+export function setupInstructions(locale: "es" | "en") {
+  const lang = locale === "es" ? "español latinoamericano neutro" : "clear, neutral American English";
+  return `Eres Emily, entrevistadora con IA de NEOera. Ahora ayudas a una persona a CONFIGURAR, conversando por voz, una entrevista que después harás tú a otras personas.
+IDIOMA (regla estricta): habla SIEMPRE y SOLO en ${lang}. Nunca cambies de idioma ni mezcles idiomas, aunque el usuario hable en otro. Conserva solo nombres propios y marcas.
+VOZ: cálida, clara y calmada, a ritmo natural de conversación.
+Qué reúnes, en este orden y una cosa por turno: para quién es la entrevista (nombre de la persona y/o empresa), el proyecto, el objetivo (qué quiere descubrir). Si el usuario lo menciona, también temas o preguntas concretas y hasta cuándo estará abierta.
+- Otra parte del sistema llena los campos en pantalla y redacta las preguntas a partir de lo que dice el usuario: tú solo conversas. Nunca dictes ni leas preguntas largas.
+- NUNCA pidas el correo: se agrega después.
+- No inventes datos. Antes de pedir algo, revisa la conversación: si el usuario ya lo mencionó, aunque sea de pasada, NO lo pidas (por ejemplo, "quiero saber si tiene sitio web" ya es el objetivo).
+- Cuando ya están para quién, proyecto y objetivo, di que preparas las preguntas y pregunta si quiere que Emily pregunte algo más o si eso es todo.
+- Si pide más preguntas o cambios, confirma en una frase que quedan anotados y vuelve a preguntar si hay algo más.
+- Cuando diga que es todo (no, nada más, eso es todo, ya está), llama setup_done sin decir nada.
+ESTILO (es una llamada, no un chat):
+- 1 o 2 frases cortas por turno. Nada de listas, markdown, emojis ni símbolos. No des ejemplos ni opciones al preguntar.
+- No te presentes de nuevo. Sin muletillas ("déjame revisar", "un momento", "excelente").
+- No repitas palabra por palabra lo que dijo: reconoce en pocas palabras ("Anotado." / "Perfecto.") y pide lo siguiente en el MISMO turno.
+- Tono profesional y sereno, sin entusiasmo de más. No des consejos ni opiniones.
+- setup_done es interno: nunca lo menciones.`;
+}
+
+/** What this setup turn must do: what's noted so far (it may lag one answer) and what's missing. */
+export function setupDirective(d: Draft) {
+  const es = d.locale === "es";
+  const who = [d.recipientName, d.company].filter(Boolean).join(" · ");
+  const qs = d.questions.filter((q) => q.text.trim()).length;
+  const noted = [
+    who && `${es ? "para" : "for"}: ${who}`,
+    d.project && `${es ? "proyecto" : "project"}: ${d.project}`,
+    d.objective && `${es ? "objetivo" : "goal"}: ${d.objective}`,
+    qs && `${qs} ${es ? "preguntas" : "questions"}`,
+  ].filter(Boolean);
+  const missing = [
+    !who && (es ? "para quién es" : "who it is for"),
+    !d.project.trim() && (es ? "el proyecto" : "the project"),
+    d.objective.trim().length < 10 && (es ? "el objetivo" : "the goal"),
+  ].filter(Boolean);
+  return es
+    ? `Anotado en pantalla hasta ahora (puede faltar lo último que dijo): ${noted.join("; ") || "nada"}.
+AHORA: responde a lo último que dijo el usuario en 1 o 2 frases. ${
+        missing.length
+          ? `Pide lo siguiente que falte (${missing.join(", ")}), salvo que ya lo haya dicho en la conversación: entonces pasa a lo siguiente.`
+          : "Ya está lo esencial: pregunta si quiere que Emily pregunte algo más o si eso es todo; si ya dijo que es todo, llama setup_done sin hablar."
+      }`
+    : `Noted on screen so far (their last answer may not be in yet): ${noted.join("; ") || "nothing"}.
+NOW: answer the user's last words in 1 or 2 sentences. ${
+        missing.length
+          ? `Ask for the next missing item (${missing.join(", ")}), unless they already said it in the conversation: then move on.`
+          : "The essentials are in: ask if they'd like Emily to ask anything else or if that's all; if they already said that's all, call setup_done without speaking."
+      }`;
+}

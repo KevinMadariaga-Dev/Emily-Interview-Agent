@@ -57,6 +57,7 @@ import {
 import { EmilyList, ResultsList } from "./saved-views";
 import { saveEmily, useSavedEmilys } from "./store";
 import { useEmilyVoice } from "./use-emily-voice";
+import { useSetupRealtime } from "./use-setup-realtime";
 import { VoiceOrb, type OrbMode } from "./voice-orb";
 
 type Created = {
@@ -167,7 +168,7 @@ export function Landing({ initialLang = "es" }: { initialLang?: Lang }) {
         {/* Violet field: Emily lives here. Fixed half-screen layer; "narrowing" is a clip-path, so
           nothing reflows while it moves. Emily's group slides with a transform to stay centered. */}
         <aside
-          className={`bg-accent-deep relative flex-col overflow-hidden px-8 py-8 text-white motion-reduce:transition-none ${
+          className={`bg-accent-deep relative flex-col overflow-hidden px-6 py-6 text-white md:px-8 md:py-8 motion-reduce:transition-none ${
             // Phones: Emily's big panel only on the home screen; setup/lists get the whole screen.
             wide ? "hidden md:flex" : "flex"
           } md:fixed md:inset-y-0 md:left-0 md:z-10 md:w-1/2 md:transition-[clip-path] md:duration-500 md:ease-in-out ${
@@ -180,7 +181,7 @@ export function Landing({ initialLang = "es" }: { initialLang?: Lang }) {
             NEO<span className="text-violet-300">era</span>
           </p>
           <div
-            className={`flex flex-1 flex-col items-center justify-center gap-6 py-8 motion-reduce:transition-none md:transition-[translate] md:duration-500 md:ease-in-out ${
+            className={`flex flex-1 flex-col items-center justify-center gap-4 py-4 md:gap-6 md:py-8 motion-reduce:transition-none md:transition-[translate] md:duration-500 md:ease-in-out ${
               panel ? "md:translate-x-[calc((var(--panel)_-_50vw)/2)]" : "md:delay-100"
             }`}
           >
@@ -221,18 +222,19 @@ export function Landing({ initialLang = "es" }: { initialLang?: Lang }) {
         {/* Content */}
         <section
           ref={rightRef}
-          className={`flex min-h-dvh min-w-0 flex-col px-6 py-6 md:px-10 xl:px-14 ${
+          className={`flex min-h-dvh min-w-0 flex-col overflow-x-clip px-4 py-6 sm:px-6 md:px-10 xl:px-14 ${
             wide ? "md:ml-[var(--panel)]" : "md:ml-[50%]"
           }`}
         >
           {/* Same three slots in every section (brand · tabs · ES/EN): nothing shifts when switching */}
-          <nav className="flex flex-wrap items-center justify-between gap-3 text-sm md:grid md:grid-cols-[1fr_auto_1fr]">
+          <nav className="flex flex-wrap items-center justify-between gap-3 text-sm lg:grid lg:grid-cols-[1fr_auto_1fr]">
             <span className="font-semibold">Emily</span>
             {wide && (
               <div
                 role="tablist"
                 aria-label={t.sections}
-                className="bg-accent-soft/60 inline-flex rounded-full p-1 md:justify-self-center"
+                // Phones/tablets: own full-width row under brand · ES/EN, three equal tabs.
+                className="bg-accent-soft/60 order-last grid w-full grid-cols-3 rounded-full p-1 lg:order-none lg:inline-flex lg:w-auto lg:justify-self-center"
               >
                 {(
                   [
@@ -246,7 +248,7 @@ export function Landing({ initialLang = "es" }: { initialLang?: Lang }) {
                     role="tab"
                     aria-selected={section === id}
                     onClick={() => go(id)}
-                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 transition-[background-color,color] duration-200 ease-out ${
+                    className={`inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full px-1.5 py-2 text-xs whitespace-nowrap transition-[background-color,color] duration-200 ease-out min-[360px]:px-2 min-[360px]:text-sm sm:gap-2 sm:px-4 ${
                       section === id
                         ? "bg-card text-accent font-medium shadow-sm"
                         : "text-muted hover:text-foreground"
@@ -266,9 +268,9 @@ export function Landing({ initialLang = "es" }: { initialLang?: Lang }) {
                 ))}
               </div>
             )}
-            {!wide && <span aria-hidden className="hidden md:block" />}
+            {!wide && <span aria-hidden className="hidden lg:block" />}
             {/* ES/EN on every screen, home included */}
-            <div className="md:justify-self-end">
+            <div className="lg:justify-self-end">
               <Segmented
                 label={t.language}
                 value={lang}
@@ -317,13 +319,13 @@ export function Landing({ initialLang = "es" }: { initialLang?: Lang }) {
                 onCreate={() => go("emilys")}
               />
             ) : !open ? (
-              <div className="my-auto max-w-xl space-y-10 py-16">
+              <div className="my-auto max-w-xl space-y-8 py-8 md:space-y-10 md:py-16">
                 <div className="space-y-6">
-                  <h1 className="animate-rise text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance md:text-6xl lg:text-7xl">
+                  <h1 className="animate-rise text-4xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance sm:text-5xl md:text-6xl lg:text-7xl">
                     {t.heroTitle}
                   </h1>
                   <p
-                    className="animate-rise text-muted max-w-[52ch] text-lg leading-relaxed"
+                    className="animate-rise text-muted max-w-[52ch] text-base leading-relaxed sm:text-lg"
                     style={{ animationDelay: "60ms" }}
                   >
                     {t.heroBody}
@@ -355,16 +357,9 @@ export function Landing({ initialLang = "es" }: { initialLang?: Lang }) {
                   className="animate-rise flex flex-wrap items-center gap-4"
                   style={{ animationDelay: "420ms" }}
                 >
-                  <button className={`${primary} px-8 py-4 text-base`} onClick={openConfig}>
+                  <button className={`${primary} w-full px-8 py-4 text-base sm:w-auto`} onClick={openConfig}>
                     {t.configure} <ArrowRight className="h-5 w-5" />
                   </button>
-                  <Link
-                    href="/demo/entrevista"
-                    target="_blank"
-                    className="text-accent text-sm font-medium hover:underline"
-                  >
-                    {t.exampleInterview}
-                  </Link>
                 </div>
               </div>
             ) : (
@@ -429,7 +424,10 @@ function ConfigureForm({
   const [refineNote, setRefineNote] = useState("");
   const [areaDraft, setAreaDraft] = useState("");
   const [assist, setAssist] = useState<Assist>(null);
-  const [status, setStatus] = useState({ voice: false, llm: false });
+  const [status, setStatus] = useState<{ voice: boolean; llm: boolean; engine?: string }>({
+    voice: false,
+    llm: false,
+  });
   const [flash, setFlash] = useState(0); // bumps when AI fills fields → brief highlight
   const [langNote, setLangNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -589,6 +587,7 @@ function ConfigureForm({
       <VoiceStudio
         draft={draft}
         openai={status.voice}
+        realtime={status.engine === "realtime"}
         onPatch={applyPatch}
         onLang={(l) => void changeLang(l)}
         onEdit={() => {
@@ -822,7 +821,8 @@ function ConfigureForm({
               {questions.map((q, i) => (
                 <li
                   key={q.id}
-                  className="group flex items-start gap-2 transition-[opacity,translate] duration-200 ease-out starting:-translate-y-1 starting:opacity-0"
+                  // Phones: the question gets the full width, its type and actions go below it.
+                  className="group grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-x-2 gap-y-1.5 transition-[opacity,translate] duration-200 ease-out sm:flex starting:-translate-y-1 starting:opacity-0"
                 >
                   <span className="text-muted w-5 pt-2.5 text-right text-sm tabular-nums">
                     {i + 1}
@@ -844,44 +844,46 @@ function ConfigureForm({
                       )
                     }
                   />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setQuestions((qs) =>
-                        qs.map((x) =>
-                          x.id === q.id
-                            ? { ...x, kind: x.kind === "abierta" ? "cerrada" : "abierta" }
-                            : x,
-                        ),
-                      )
-                    }
-                    aria-label={t.changeKind(i + 1, q.kind === "abierta" ? t.open : t.closed)}
-                    className={`mt-2 w-20 shrink-0 rounded-full px-2 py-1 text-xs font-medium transition-colors ${
-                      q.kind === "abierta"
-                        ? "bg-accent-soft text-accent"
-                        : "bg-sky-500/15 text-sky-700 dark:text-sky-300"
-                    }`}
-                  >
-                    {q.kind === "abierta" ? t.open : t.closed}
-                  </button>
-                  <span className="mt-0.5 flex shrink-0 opacity-60 transition group-focus-within:opacity-100 group-hover:opacity-100">
-                    <IconBtn label={t.up(i + 1)} onClick={() => move(i, -1)} disabled={i === 0}>
-                      <ArrowUp className="h-4 w-4" />
-                    </IconBtn>
-                    <IconBtn
-                      label={t.down(i + 1)}
-                      onClick={() => move(i, 1)}
-                      disabled={i === questions.length - 1}
+                  <div className="col-start-2 flex items-center justify-between gap-2 sm:contents">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setQuestions((qs) =>
+                          qs.map((x) =>
+                            x.id === q.id
+                              ? { ...x, kind: x.kind === "abierta" ? "cerrada" : "abierta" }
+                              : x,
+                          ),
+                        )
+                      }
+                      aria-label={t.changeKind(i + 1, q.kind === "abierta" ? t.open : t.closed)}
+                      className={`w-20 shrink-0 rounded-full px-2 py-1 text-xs font-medium transition-colors sm:mt-2 ${
+                        q.kind === "abierta"
+                          ? "bg-accent-soft text-accent"
+                          : "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                      }`}
                     >
-                      <ArrowDown className="h-4 w-4" />
-                    </IconBtn>
-                    <IconBtn
-                      label={t.remove(i + 1)}
-                      onClick={() => setQuestions((qs) => qs.filter((x) => x.id !== q.id))}
-                    >
-                      <XIcon className="h-4 w-4" />
-                    </IconBtn>
-                  </span>
+                      {q.kind === "abierta" ? t.open : t.closed}
+                    </button>
+                    <span className="flex shrink-0 transition group-focus-within:opacity-100 group-hover:opacity-100 sm:mt-0.5 sm:opacity-60">
+                      <IconBtn label={t.up(i + 1)} onClick={() => move(i, -1)} disabled={i === 0}>
+                        <ArrowUp className="h-4 w-4" />
+                      </IconBtn>
+                      <IconBtn
+                        label={t.down(i + 1)}
+                        onClick={() => move(i, 1)}
+                        disabled={i === questions.length - 1}
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </IconBtn>
+                      <IconBtn
+                        label={t.remove(i + 1)}
+                        onClick={() => setQuestions((qs) => qs.filter((x) => x.id !== q.id))}
+                      >
+                        <XIcon className="h-4 w-4" />
+                      </IconBtn>
+                    </span>
+                  </div>
                 </li>
               ))}
             </ol>
@@ -1029,6 +1031,7 @@ function readTranscriptPref() {
 function VoiceStudio({
   draft,
   openai,
+  realtime,
   onPatch,
   onLang,
   onEdit,
@@ -1039,6 +1042,8 @@ function VoiceStudio({
 }: {
   draft: Draft;
   openai: boolean;
+  /** Server default engine is realtime (?engine=classic forces the classic one). */
+  realtime: boolean;
   onPatch: (p: Patch) => void;
   onLang: (l: Lang) => void;
   onEdit: () => void;
@@ -1057,6 +1062,7 @@ function VoiceStudio({
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState("");
   const [exitAsk, setExitAsk] = useState(false); // "delete the setup progress?" alert
+  const [consent, setConsent] = useState<Lang | null>(null); // "before using voice" notice
   const [paused, setPaused] = useState(false); // the user paused the conversation
   const voice = useEmilyVoice({
     openai,
@@ -1065,6 +1071,13 @@ function VoiceStudio({
     onMode: setMode,
   });
   const draftRef = useRef(draft);
+  const rtv = useSetupRealtime({
+    draftRef,
+    onPatch,
+    onMsg: (from, text) => setMsgs((m) => [...m, { from, text }]),
+    onMode: setMode,
+    onDone: () => setPhase("review"),
+  });
   const alive = useRef(true);
   const pendingTyped = useRef(""); // a typed answer, taken by the next listenText()
   const lastSaid = useRef(""); // the user's previous answer (merged when they add to it)
@@ -1104,11 +1117,37 @@ function VoiceStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- start of the conversation only
   }, [phase, draft.locale]);
 
+  /** Language chosen: first the voice/privacy notice, then the microphone. */
   function pick(next: Lang) {
+    setConsent(next);
+  }
+
+  function start(next: Lang) {
+    setConsent(null);
     voice.unlock(); // inside the click: the browser lets Emily's audio play
     onLang(next); // UI + Emily's language (existing content is translated)
-    setMsgs([{ from: "emily", text: dict[next].greeting }]);
+    draftRef.current = { ...draftRef.current, locale: next };
     setPhase("talk");
+    const forced = new URLSearchParams(window.location.search).get("engine");
+    if (openai && (forced ? forced === "realtime" : realtime)) {
+      greeted.current = true; // Emily greets over the realtime call
+      rtv
+        .start(dict[next].greeting, next)
+        .then((ok) => ok || startClassic(next))
+        .catch((err: unknown) => setError(micError(err, next)));
+      return;
+    }
+    startClassic(next);
+  }
+
+  /** Classic engine (no realtime, or it failed): recorded turns, TTS replies. */
+  function startClassic(next: Lang) {
+    // Mic permission right away (iOS prompts reliably close to the tap).
+    voice.openMic().catch((err: unknown) => setError(micError(err, next)));
+    setMsgs([{ from: "emily", text: dict[next].greeting }]);
+    if (greeted.current) {
+      void voice.say(dict[next].greeting).then(() => listenTurn());
+    }
   }
 
   function toggleTranscript() {
@@ -1121,6 +1160,7 @@ function VoiceStudio({
 
   function leave() {
     alive.current = false;
+    rtv.close();
     voice.cancel();
     onEdit();
   }
@@ -1128,6 +1168,10 @@ function VoiceStudio({
   /** The X: pause Emily and ask whether to delete the setup progress. */
   function askExit() {
     if (exitAsk) return;
+    if (rtv.active) {
+      if (!paused) rtv.pause();
+      return setExitAsk(true);
+    }
     alive.current = false;
     voice.cancel();
     setExitAsk(true);
@@ -1136,6 +1180,11 @@ function VoiceStudio({
   /** "Continue": back in the studio; Emily listens again where the conversation was. */
   /** Pause: Emily stops talking and listening (not while a reply is being worked out). */
   function pause() {
+    if (rtv.active) {
+      if (paused) return;
+      rtv.pause();
+      return setPaused(true);
+    }
     if (phase !== "talk" || paused || thinking || voice.state === "transcribing") return;
     alive.current = false;
     voice.cancel();
@@ -1145,6 +1194,7 @@ function VoiceStudio({
   /** Resume: Emily repeats her last line, then listens again. */
   async function resume() {
     setPaused(false);
+    if (rtv.active) return rtv.resume();
     setThinking(false);
     alive.current = true;
     const last = [...msgs].reverse().find((m) => m.from === "emily")?.text;
@@ -1154,6 +1204,7 @@ function VoiceStudio({
 
   function keepGoing() {
     setExitAsk(false);
+    if (rtv.active) return void (paused || rtv.resume());
     setThinking(false); // a reply in flight was dropped when the alert opened
     if (paused) return; // it was paused before the alert: stays paused
     alive.current = true;
@@ -1161,13 +1212,21 @@ function VoiceStudio({
   }
 
   function discard() {
+    rtv.close();
     voice.cancel();
     onDiscard();
   }
 
-  function review() {
+  async function review() {
     alive.current = false;
     voice.cancel();
+    if (rtv.active) {
+      rtv.pause();
+      setThinking(true);
+      await rtv.settled(); // everything said so far is in the fields
+      setThinking(false);
+      rtv.close();
+    }
     setPhase("review");
   }
 
@@ -1221,13 +1280,50 @@ function VoiceStudio({
     if (alive.current) setPhase("review");
   }
 
-  async function handle(text: string) {
-    youSaid(text);
-    lastSaid.current = text;
-    setThinking(true);
+  /**
+   * Works out the reply to `text`. If the user starts talking again meanwhile, that work is
+   * dropped, Emily listens to the rest, and both parts are processed together.
+   */
+  async function think(text: string, base: Draft) {
+    for (;;) {
+      setThinking(true);
+      let heard = () => {};
+      const spoke = new Promise<"spoke">((r) => (heard = () => r("spoke")));
+      // Recorded from the first syllable, so nothing said meanwhile is lost.
+      const next = voice.listen({ onSpeech: heard });
+      const drop = () => {
+        voice.discardTurn();
+        void next.catch(() => {});
+      };
+      let res: Awaited<ReturnType<typeof fillFromSpeech>> | "spoke";
+      try {
+        res = await Promise.race([fillFromSpeech(text, base), spoke]);
+      } catch (err) {
+        drop();
+        throw err;
+      } finally {
+        setThinking(false);
+      }
+      if (res !== "spoke") {
+        drop();
+        return { ...res, text };
+      }
+      const more = await next;
+      if (!alive.current) return null;
+      if (more) {
+        youSaid(more);
+        text = `${text} ${more}`;
+      }
+    }
+  }
+
+  async function handle(said: string) {
+    youSaid(said);
     try {
-      const { patch, reply, done } = await fillFromSpeech(text, draftRef.current);
-      if (!alive.current) return;
+      const out = await think(said, draftRef.current);
+      if (!out || !alive.current) return;
+      const { patch, reply, done, text } = out;
+      lastSaid.current = text;
       const fields: Patch = { ...patch };
       delete fields.locale; // the language was chosen explicitly
       onPatch(fields);
@@ -1264,14 +1360,10 @@ function VoiceStudio({
    * Reads back what Emily understood from `text` (on top of the still-unsaved `pending` fields)
    * and asks if it's right: yes → saved; no → "what should I change?" and confirm again.
    */
-  async function confirm(text: string, pending: Patch): Promise<void> {
-    setThinking(true);
-    const { patch, reply, done } = await fillFromSpeech(text, {
-      ...draftRef.current,
-      ...pending,
-    } as Draft);
-    setThinking(false);
-    if (!alive.current) return;
+  async function confirm(said: string, pending: Patch): Promise<void> {
+    const out = await think(said, { ...draftRef.current, ...pending } as Draft);
+    if (!out || !alive.current) return;
+    const { patch, reply, done, text } = out;
     const merged: Patch = { ...pending, ...patch };
     delete merged.locale;
     for (;;) {
@@ -1307,6 +1399,11 @@ function VoiceStudio({
   function sendTyped() {
     const text = typed.trim();
     if (!text) return;
+    if (rtv.active) {
+      setTyped("");
+      setPaused(false);
+      return rtv.sendText(text);
+    }
     pendingTyped.current = text;
     setTyped("");
     voice.cancel();
@@ -1319,19 +1416,22 @@ function VoiceStudio({
     if (voice.state === "idle" && !thinking) void listenTurn(); // nothing was waiting for it
   }
 
-  const recording = voice.state === "recording";
-  const busy = thinking || voice.state === "transcribing" || voice.state === "preparing";
+  // Realtime: always listening, never blocked; the fields fill in the background.
+  const vs = rtv.active ? rtv : voice;
+  const recording = vs.state === "recording";
+  const busy =
+    !rtv.active && (thinking || voice.state === "transcribing" || voice.state === "preparing");
   const status = paused
     ? t.pausedNow
     : recording
       ? t.stRecording
-      : voice.state === "transcribing"
+      : vs.state === "transcribing"
         ? t.stTranscribing
-        : thinking
+        : thinking || (rtv.filling && vs.state === "idle")
           ? t.stFilling
           : voice.state === "preparing"
             ? t.lThinking
-            : voice.state === "speaking"
+            : vs.state === "speaking"
               ? t.stSpeaking
               : "";
   const shown = msgs.slice(-4);
@@ -1459,10 +1559,10 @@ function VoiceStudio({
                     </p>
                   </li>
                 ))}
-              {transcript && recording && voice.interim && (
+              {transcript && recording && vs.interim && (
                 <li className="flex justify-end">
                   <p className="max-w-[85%] rounded-2xl border border-dashed border-white/30 px-4 py-2.5 text-violet-100 italic">
-                    {voice.interim}
+                    {vs.interim}
                   </p>
                 </li>
               )}
@@ -1483,8 +1583,8 @@ function VoiceStudio({
           <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
             <button
               type="button"
-              onClick={recording ? voice.stop : () => void listenTurn()}
-              disabled={paused || busy || voice.state === "speaking"}
+              onClick={recording ? vs.stop : () => void listenTurn()}
+              disabled={paused || busy || vs.state === "speaking" || (rtv.active && !recording)}
               aria-label={recording ? t.stopTalking : t.talk}
               className={`grid h-14 w-14 place-items-center rounded-full shadow-lg transition-[scale,background-color,opacity] duration-160 ease-out active:scale-[0.95] disabled:opacity-40 ${
                 recording ? "bg-white text-red-500" : "bg-white/15 text-white"
@@ -1495,7 +1595,7 @@ function VoiceStudio({
             <button
               type="button"
               onClick={paused ? () => void resume() : pause}
-              disabled={!paused && (thinking || voice.state === "transcribing")}
+              disabled={!paused && !rtv.active && (thinking || voice.state === "transcribing")}
               aria-pressed={paused}
               className="inline-flex items-center gap-2 rounded-full border border-white/20 px-5 py-2.5 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-40"
             >
@@ -1511,7 +1611,7 @@ function VoiceStudio({
             </button>
             <button
               type="button"
-              onClick={review}
+              onClick={() => void review()}
               className="rounded-full border border-white/20 px-5 py-2.5 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10"
             >
               {t.vsReview}
@@ -1546,6 +1646,16 @@ function VoiceStudio({
       )}
 
       {exitAsk && <ExitAlert onDiscard={discard} onContinue={keepGoing} />}
+      {consent && (
+        <Alert
+          title={dict[consent].vcTitle}
+          body={dict[consent].vcBody}
+          cancel={dict[consent].vcCancel}
+          confirm={dict[consent].vsContinue}
+          onCancel={() => setConsent(null)}
+          onConfirm={() => start(consent)}
+        />
+      )}
 
       {phase === "review" && (
         <ReviewModal
@@ -1579,33 +1689,68 @@ const emptyDraft = (locale: Lang): Omit<Draft, "questions"> => ({
 /** Leaving the voice studio: delete the setup progress, or keep going. */
 function ExitAlert({ onDiscard, onContinue }: { onDiscard: () => void; onContinue: () => void }) {
   const { t } = useLang();
+  return (
+    <Alert
+      title={t.vsDiscardTitle}
+      body={t.vsDiscardBody}
+      cancel={t.vsDiscardYes}
+      confirm={t.vsContinue}
+      onCancel={onDiscard}
+      onConfirm={onContinue}
+      danger
+    />
+  );
+}
+
+/** Emily-styled confirmation dialog: a quiet (or red, with `danger`) button and a primary one. */
+function Alert({
+  title,
+  body,
+  cancel,
+  confirm,
+  onCancel,
+  onConfirm,
+  danger = false,
+}: {
+  title: string;
+  body: string;
+  cancel: string;
+  confirm: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  danger?: boolean;
+}) {
   return createPortal(
     <div className="fixed inset-0 z-[70] grid place-items-center bg-black/55 p-4 backdrop-blur-sm transition-opacity duration-200 ease-out starting:opacity-0">
       <section
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="exit-title"
-        aria-describedby="exit-body"
+        aria-labelledby="alert-title"
+        aria-describedby="alert-body"
         className="bg-card text-foreground w-full max-w-md space-y-5 rounded-3xl p-6 shadow-2xl transition-[opacity,translate,scale] duration-200 ease-out md:p-7 starting:translate-y-2 starting:scale-[0.98] starting:opacity-0"
       >
         <div className="space-y-2">
-          <h2 id="exit-title" className="text-xl font-semibold tracking-[-0.01em]">
-            {t.vsDiscardTitle}
+          <h2 id="alert-title" className="text-xl font-semibold tracking-[-0.01em]">
+            {title}
           </h2>
-          <p id="exit-body" className="text-muted text-sm leading-relaxed">
-            {t.vsDiscardBody}
+          <p id="alert-body" className="text-muted text-sm leading-relaxed">
+            {body}
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-3">
           <button
             type="button"
-            onClick={onDiscard}
-            className={`${quiet} border-red-500/40 text-red-600 hover:border-red-500 hover:text-red-600 dark:text-red-400`}
+            onClick={onCancel}
+            className={
+              danger
+                ? `${quiet} border-red-500/40 text-red-600 hover:border-red-500 hover:text-red-600 dark:text-red-400`
+                : quiet
+            }
           >
-            {t.vsDiscardYes}
+            {cancel}
           </button>
-          <button type="button" className={primary} onClick={onContinue} autoFocus>
-            {t.vsContinue}
+          <button type="button" className={primary} onClick={onConfirm} autoFocus>
+            {confirm}
           </button>
         </div>
       </section>
