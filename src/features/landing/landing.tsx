@@ -1572,7 +1572,7 @@ const emptyDraft = (locale: Lang): Omit<Draft, "questions"> => ({
   status: "active",
   expires: "",
   noExpiry: false,
-  voice: "coral",
+  voice: "marin",
   reportEmail: "",
 });
 

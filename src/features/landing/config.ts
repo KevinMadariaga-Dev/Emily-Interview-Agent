@@ -9,6 +9,8 @@ export type Question = { text: string; kind: QuestionKind };
  * it guesses the language per line and switched to English/garbled phonetics mid-interview.
  */
 export const voices = [
+  // Marin: OpenAI's most natural voice for realtime conversation — the default for new Emilys.
+  { id: "marin", name: "Marin", desc: { es: "Natural y cercana", en: "Natural and warm" } },
   { id: "coral", name: "Coral", desc: { es: "Cálida y cercana", en: "Warm and friendly" } },
   { id: "nova", name: "Nova", desc: { es: "Enérgica y clara", en: "Energetic and clear" } },
   { id: "shimmer", name: "Shimmer", desc: { es: "Suave y tranquila", en: "Soft and calm" } },
@@ -289,8 +291,8 @@ export function normalizeDraft(raw: unknown): Draft {
     project: str(d.project, 160),
     objective: str(d.objective, 800),
     questions: toQuestions(qs as NonNullable<Patch["questions"]>).filter((q) => q.text.trim()),
-    // Any retired voice (male/neutral, or ones that failed validation) falls back to Coral.
-    voice: voiceIds.includes(d.voice as VoiceId) ? (d.voice as VoiceId) : "coral",
+    // Any retired voice (male/neutral, or ones that failed validation) falls back to Marin.
+    voice: voiceIds.includes(d.voice as VoiceId) ? (d.voice as VoiceId) : "marin",
     reportEmail: str(d.reportEmail, 254).trim(),
     areas: (Array.isArray(d.areas) ? d.areas : [])
       .filter((a): a is string => typeof a === "string")

@@ -2,8 +2,8 @@ import "server-only";
 import { env, requireEnv } from "@/lib/env";
 
 const TTS_INSTRUCTIONS = {
-  es: "Habla SIEMPRE en español latinoamericano neutro, con acento latino natural, incluso al pronunciar marcas o palabras en inglés. Voz femenina cálida y clara. Habla con calma y sin prisa, a un ritmo pausado (un poco más lento que una conversación normal), con pausas breves y naturales entre frases (sin silencios largos) y una entonación amable y profesional. Nunca cambies de idioma ni de acento.",
-  en: "Always speak in clear, neutral American English, even for Spanish names or words. Warm, clear female voice. Speak calmly and unhurriedly, at a relaxed pace (a little slower than normal conversation), with brief, natural pauses between sentences (no long silences) and a kind, professional tone. Never switch language or accent.",
+  es: "Habla SIEMPRE en español latinoamericano neutro, con acento latino natural, incluso al pronunciar marcas o palabras en inglés. Voz femenina cálida y clara. Habla con calma, a ritmo natural de conversación, con pausas breves y naturales entre frases (sin silencios largos) y una entonación amable y profesional. Nunca cambies de idioma ni de acento.",
+  en: "Always speak in clear, neutral American English, even for Spanish names or words. Warm, clear female voice. Speak calmly, at a natural conversational pace, with brief, natural pauses between sentences (no long silences) and a kind, professional tone. Never switch language or accent.",
 } as const;
 
 // OpenAI occasionally stalls mid-response (seen: a 2-minute TTS). Bound every call so the

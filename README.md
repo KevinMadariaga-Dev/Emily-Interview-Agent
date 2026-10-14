@@ -17,16 +17,16 @@ Participant ──(voice)──► /e/<slug> ──► OpenAI STT · LLM · TTS 
 
 ## Tech stack
 
-| Layer     | Choice                                                                 |
-| --------- | ---------------------------------------------------------------------- |
-| Framework | **Next.js 16 (App Router) + TypeScript + React 19**, server actions    |
-| Styling   | Tailwind CSS v4                                                        |
-| Database  | **PostgreSQL (Supabase)** + **Drizzle ORM** (migrations in `drizzle/`) |
-| Voice     | OpenAI `gpt-4o-transcribe` (listening) · `gpt-4o-mini-tts` (speaking)  |
-| LLM       | OpenAI `gpt-5.6-luna` (or Anthropic via `LLM_PROVIDER`), Zod-validated |
-| Email     | Gmail SMTP (App Password) · Resend as fallback                         |
-| Notion    | Notion REST API (`2025-09-03`, data sources)                           |
-| Quality   | ESLint, Prettier, Vitest, GitHub Actions CI (incl. `pnpm audit`)       |
+| Layer     | Choice                                                                                                                                                                                                                                         |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Framework | **Next.js 16 (App Router) + TypeScript + React 19**, server actions                                                                                                                                                                            |
+| Styling   | Tailwind CSS v4                                                                                                                                                                                                                                |
+| Database  | **PostgreSQL (Supabase)** + **Drizzle ORM** (migrations in `drizzle/`)                                                                                                                                                                         |
+| Voice     | Interviews: OpenAI `gpt-realtime-2.1-mini` over WebRTC (speech-to-speech, ~0.5 s replies, semantic turn detection, voice `marin`), app-steered turns; falls back to `gpt-4o-transcribe` + LLM + `gpt-4o-mini-tts` (`VOICE_ENGINE`, `?engine=`) |
+| LLM       | OpenAI `gpt-5.6-luna` (or Anthropic via `LLM_PROVIDER`), Zod-validated                                                                                                                                                                         |
+| Email     | Gmail SMTP (App Password) · Resend as fallback                                                                                                                                                                                                 |
+| Notion    | Notion REST API (`2025-09-03`, data sources)                                                                                                                                                                                                   |
+| Quality   | ESLint, Prettier, Vitest, GitHub Actions CI (incl. `pnpm audit`)                                                                                                                                                                               |
 
 ## Routes
 

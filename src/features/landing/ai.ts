@@ -49,7 +49,8 @@ const hasLlm = () =>
 
 /** Which engines the landing can use: OpenAI voice (STT/TTS) and the LLM. */
 export async function aiStatus() {
-  return { voice: !!env().OPENAI_API_KEY, llm: hasLlm() };
+  const voice = !!env().OPENAI_API_KEY;
+  return { voice, llm: hasLlm(), engine: voice ? env().VOICE_ENGINE : ("classic" as const) };
 }
 
 async function allow(kind: string) {
@@ -352,7 +353,8 @@ Participante: ${[draft.recipientName, draft.company].filter(Boolean).join(", ") 
 Preguntas obligatorias (en orden, índice desde 0): ${qs.map((q, i) => `[${i}] ${q}`).join(" ")}
 Áreas opcionales para profundizar si surge: ${draft.areas.join(", ") || "ninguna"}
 Reglas:
-- Idioma: ${es ? "español" : "English"}. Frases cortas y naturales para ser habladas (máx. 2 frases).
+- Idioma: ${es ? "español" : "English"}. Frases cortas y naturales para ser habladas (1 a 3 frases), sin listas, markdown, emojis ni símbolos.
+- Preséntate solo en el primer turno; sin muletillas ni relleno ("déjame revisar", "un momento", "excelente pregunta"); no repitas literalmente lo que dijo el participante.
 - Escribe SIEMPRE en ${es ? "español" : "English"}, aunque el participante use palabras en otro idioma; nunca mezcles idiomas en una misma frase. Escribe los números con cifras.
 - Si alguna pregunta, el objetivo o el proyecto están escritos en otro idioma, dilos traducidos al ${es ? "español" : "English"} (conserva solo nombres propios y marcas).
 - Si el participante responde en otro idioma, sigue hablando en ${es ? "español" : "English"}: no cambies de idioma.

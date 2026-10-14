@@ -34,7 +34,7 @@ describe("untrusted drafts are typed and bounded", () => {
     expect(d.questions[1]!.text).toHaveLength(300);
     expect(d.areas).toEqual(["pagos", "z".repeat(60)]);
     expect(d.noExpiry).toBe(false);
-    expect(d.voice).toBe("coral");
+    expect(d.voice).toBe("marin");
   });
 
   it("caps the number of questions and areas", () => {

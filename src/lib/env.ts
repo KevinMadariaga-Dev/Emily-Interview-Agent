@@ -19,6 +19,10 @@ const serverSchema = z.object({
   OPENAI_STT_MODEL: z.string().default("gpt-4o-transcribe"),
   OPENAI_TTS_MODEL: z.string().default("gpt-4o-mini-tts"),
   OPENAI_TTS_VOICE: z.string().default("coral"),
+  // Interview voice engine: "realtime" (speech-to-speech, ~0.5 s replies) or "classic"
+  // (transcribe → LLM → TTS). Participants can force one with ?engine=… for A/B tests.
+  VOICE_ENGINE: z.enum(["realtime", "classic"]).default("realtime"),
+  OPENAI_REALTIME_MODEL: z.string().default("gpt-realtime-2.1-mini"),
 
   LLM_PROVIDER: z.enum(["openai", "anthropic"]).default("openai"),
   LLM_MODEL: z.string().default("gpt-5.6-luna"),

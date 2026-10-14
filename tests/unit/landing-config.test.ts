@@ -73,16 +73,16 @@ describe("normalizeDraft", () => {
       { text: "¿Tienen sitio web?", kind: "cerrada" },
       { text: "¿Cómo venden hoy?", kind: "abierta" },
     ]);
-    expect(d.voice).toBe("coral");
+    expect(d.voice).toBe("marin");
     expect(d.locale).toBe("es");
     expect(d.areas).toEqual([]);
   });
 
-  it("keeps only the validated female voices; anything else falls back to Coral", async () => {
+  it("keeps only the validated female voices; anything else falls back to Marin", async () => {
     const { normalizeDraft, voiceIds } = await import("@/features/landing/config");
-    expect(voiceIds).toEqual(["coral", "nova", "shimmer", "sage"]);
-    for (const retired of ["onyx", "echo", "ash", "alloy", "fable", "marin", "verse"])
-      expect(normalizeDraft({ voice: retired }).voice).toBe("coral");
+    expect(voiceIds).toEqual(["marin", "coral", "nova", "shimmer", "sage"]);
+    for (const retired of ["onyx", "echo", "ash", "alloy", "fable", "verse"])
+      expect(normalizeDraft({ voice: retired }).voice).toBe("marin");
     expect(normalizeDraft({ voice: "sage" }).voice).toBe("sage");
   });
 });
