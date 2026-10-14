@@ -90,4 +90,12 @@ describe("realtime voice setup", () => {
     expect(d).toMatch(/anything else.*setup_done/);
     expect(setupInstructions("en")).toContain("SOLO en clear, neutral American English");
   });
+
+  it("gives English examples in English (the model repeats quoted phrases verbatim)", () => {
+    expect(setupInstructions("en")).not.toMatch(/Anotado|déjame/);
+    expect(setupInstructions("en")).toContain('"Got it."');
+    expect(setupInstructions("es")).toContain('"Anotado."');
+    expect(realtimeInstructions(draft("en"))).not.toMatch(/"Gracias|déjame|genial/);
+    expect(realtimeInstructions(draft("es"))).toContain('"Gracias, entiendo."');
+  });
 });
