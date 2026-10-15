@@ -20,7 +20,10 @@ describe("one language per Emily", () => {
     expect(
       mixesLanguages({
         ...en,
-        questions: [...en.questions, { text: "¿Cómo registran sus ventas?", kind: "abierta" }],
+        questions: [
+          ...en.questions,
+          { id: "qx", text: "¿Cómo registran sus ventas?", kind: "abierta" },
+        ],
       }),
     ).toBe(true);
     const es = normalizeDraft({

@@ -3,7 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { InterviewSummary } from "./ai";
 import type { NotionStatus, ReportStatus } from "./report";
-import { coverage, verdict, type AnswerStatus, type Draft, type QuestionKind } from "./config";
+import {
+  coverage,
+  opportunityLines,
+  verdict,
+  type AnswerStatus,
+  type Draft,
+  type QuestionKind,
+} from "./config";
 import { LangProvider, useLang } from "./i18n";
 import {
   CheckIcon,
@@ -297,10 +304,58 @@ function QuestionChecklist({
   );
 }
 
+/**
+ * Under a main answer with branches: the path taken, how an unclear answer was read, the answers
+ * to the branch questions asked, and (in one line) those of the other branch, which don't apply.
+ */
+export function BranchDetail({ a }: { a: InterviewSummary["answers"][number] }) {
+  const { t } = useLang();
+  const asked = a.followUps?.filter((f) => f.status !== "no_aplica") ?? [];
+  const apart = a.followUps?.filter((f) => f.status === "no_aplica") ?? [];
+  if (!a.route && !a.ambiguityNote && !a.followUps?.length) return null;
+  return (
+    <div className="space-y-2 pt-1 text-sm">
+      {a.route && (
+        <p className="text-accent font-medium">
+          {t.route}: {a.route}
+        </p>
+      )}
+      {a.ambiguityNote && (
+        <p className="text-muted italic">
+          {t.ambiguity}: {a.ambiguityNote}
+        </p>
+      )}
+      {asked.length > 0 && (
+        <dl className="border-accent/30 space-y-2 border-l-2 pl-3">
+          {asked.map((f) => (
+            <div key={f.questionId ?? f.question} className="space-y-0.5">
+              <dt className="text-muted flex items-start justify-between gap-3">
+                <span>{f.question}</span>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[f.status]}`}
+                >
+                  {t.status[f.status]}
+                </span>
+              </dt>
+              <dd>{f.answer}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {apart.length > 0 && (
+        <p className="text-muted text-xs">
+          {t.notApplicable}: {apart.map((f) => f.question).join(" · ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
 const statusStyle: Record<AnswerStatus, string> = {
   completa: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
   parcial: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
   sin_respuesta: "bg-red-500/15 text-red-700 dark:text-red-300",
+  no_aplica: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
 };
 
 const toneColor = { ok: "#10b981", mid: "#f59e0b", low: "#ef4444" } as const;
@@ -395,6 +450,7 @@ export function SuccessReport({
                 </span>
               </dt>
               <dd>{a.answer}</dd>
+              <BranchDetail a={a} />
             </div>
           ))}
         </dl>
@@ -412,6 +468,7 @@ export function SuccessReport({
               ))}
             </div>
           )}
+          <InfoList title={t.opportunities} items={opportunityLines(summary, t.timeline)} />
           <InfoList title={t.nextSteps} items={summary.nextSteps} />
         </div>
       </div>

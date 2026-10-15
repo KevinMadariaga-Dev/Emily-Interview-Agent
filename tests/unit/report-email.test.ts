@@ -30,6 +30,10 @@ const summary = {
   painPoints: ["No saben qué sistema de inventario usar"],
   quotes: ["Lo llevamos a mano, no sé bien"],
   nextSteps: ["Proponer un sistema de inventario simple"],
+  opportunities: [
+    { item: "Página web con pedidos en línea", timeline: "long" as const },
+    { item: "Sistema de inventario", timeline: "asap" as const, detail: "para este mes" },
+  ],
 };
 
 describe("renderInterviewEmail", () => {
@@ -66,5 +70,16 @@ describe("renderInterviewEmail", () => {
     expect(email.html).not.toContain("<script>x</script>");
     expect(email.html).toContain("&lt;script&gt;");
     expect(email.text).toContain("1. ¿Tienen sitio web? [Completa]");
+  });
+});
+
+describe("renderInterviewEmail: opportunities and timelines", () => {
+  const email = renderInterviewEmail({ draft, summary, history: [], at: new Date("2026-10-02T15:00:00Z") });
+  it("lists what they want, most urgent first", () => {
+    expect(email.html).toContain("Oportunidades y plazos");
+    const asap = email.text.indexOf("Sistema de inventario — Lo antes posible («para este mes»)");
+    const later = email.text.indexOf("Página web con pedidos en línea — Más adelante");
+    expect(asap).toBeGreaterThan(-1);
+    expect(later).toBeGreaterThan(asap);
   });
 });

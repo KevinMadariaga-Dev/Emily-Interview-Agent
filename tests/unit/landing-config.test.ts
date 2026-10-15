@@ -37,7 +37,7 @@ describe("landing config", () => {
         ...empty,
         project: "X",
         objective: "Entender algo útil",
-        questions: [{ text: "¿Q?", kind: "abierta" as const }],
+        questions: [{ id: "q1", text: "¿Q?", kind: "abierta" as const }],
       }),
     ).toEqual([]);
   });
@@ -70,8 +70,8 @@ describe("normalizeDraft", () => {
       questions: ["¿Tienen sitio web?", "¿Cómo venden hoy?", "", null],
     });
     expect(d.questions).toEqual([
-      { text: "¿Tienen sitio web?", kind: "cerrada" },
-      { text: "¿Cómo venden hoy?", kind: "abierta" },
+      { id: "q1", text: "¿Tienen sitio web?", kind: "cerrada" },
+      { id: "q2", text: "¿Cómo venden hoy?", kind: "abierta" },
     ]);
     expect(d.voice).toBe("marin");
     expect(d.locale).toBe("es");

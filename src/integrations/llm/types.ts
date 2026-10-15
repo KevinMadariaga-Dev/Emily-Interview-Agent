@@ -8,5 +8,7 @@ export interface LlmProvider {
     messages: ChatMessage[];
     model?: string;
     temperature?: number;
+    /** Reasoning models: overrides LLM_REASONING_EFFORT (e.g. "minimal" for quick reads). */
+    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
   }): Promise<string>;
 }

@@ -1,5 +1,6 @@
 import type { InterviewSummary, Turn } from "./ai";
-import { coverage, verdict, type AnswerStatus, type Draft } from "./config";
+import { coverage, mostUrgent, opportunityLines, verdict, type AnswerStatus, type Draft } from "./config";
+import type { Timeline } from "./question-tree";
 import schema from "./notion-schema.json";
 import { reportLabels } from "./report-i18n";
 
@@ -12,10 +13,20 @@ export const NOTION_PROPERTIES = schema;
 /** Notion accepts at most 100 blocks per request; the rest is appended in batches. */
 export const NOTION_BATCH = 100;
 
+/** "Urgencia" select options (Spanish names: they're the database schema, like "Veredicto"). */
+export const URGENCIA: Record<Timeline, string> = {
+  asap: "Lo antes posible",
+  short: "Pronto",
+  long: "Más adelante",
+  not_now: "Por ahora no",
+  unknown: "Sin plazo",
+};
+
 const statusIcon: Record<AnswerStatus, string> = {
   completa: "✅",
   parcial: "🟡",
   sin_respuesta: "🔴",
+  no_aplica: "⚪",
 };
 
 type RichText = { type: "text"; text: { content: string }; annotations: { bold: boolean } };
@@ -70,6 +81,7 @@ export function toNotionInterviewPage({
   const pct = coverage(summary.answers);
   const v = verdict(pct); // v.label (Spanish) only for the "Veredicto" select: it's the DB schema
   const L = reportLabels(draft.locale);
+  const urgency = mostUrgent(summary);
   const who = draft.recipientName || L.anonymous;
 
   // Participant turns tagged with the question they answer (older histories have no tag).
@@ -88,6 +100,16 @@ export function toNotionInterviewPage({
         ),
       ]),
       paragraph([...rt(L.answerSummary, true), ...rt(a?.answer || L.noAnswer)]),
+      ...(a?.route ? [paragraph([...rt(L.route, true), ...rt(a.route)])] : []),
+      ...(a?.ambiguityNote ? [paragraph([...rt(L.ambiguity, true), ...rt(a.ambiguityNote)])] : []),
+      ...(a?.followUps ?? [])
+        .filter((f) => f.status !== "no_aplica")
+        .map((f) =>
+          paragraph([
+            ...rt(`↳ ${f.question} `, true),
+            ...rt(`${statusIcon[f.status]} ${L.status[f.status]} — ${f.answer}`),
+          ]),
+        ),
       ...(said.length ? [paragraph(rt(L.said, true)), ...said.map(quote)] : []),
     ];
   });
@@ -106,6 +128,8 @@ export function toNotionInterviewPage({
       "Objetivo cumplido": { checkbox: summary.objective.met },
       Idioma: { select: { name: draft.locale === "es" ? "Español" : "English" } },
       Preguntas: { number: draft.questions.length },
+      // Most urgent thing they want (select options in Spanish: it's the database schema).
+      ...(urgency && { Urgencia: { select: { name: URGENCIA[urgency] } } }),
     },
     children: [
       {
@@ -136,6 +160,7 @@ export function toNotionInterviewPage({
       ...section(L.pains, summary.painPoints, bullet),
       ...section(L.insights, summary.insights, bullet),
       ...section(L.quotes, summary.quotes, quote),
+      ...section(L.opportunities, opportunityLines(summary, L.timeline), todo),
       ...section(L.nextSteps, summary.nextSteps, todo),
       divider,
       heading(L.qa),

@@ -1,5 +1,5 @@
 import type { InterviewSummary, Turn } from "./ai";
-import { coverage, verdict, type AnswerStatus, type Draft } from "./config";
+import { coverage, opportunityLines, verdict, type AnswerStatus, type Draft } from "./config";
 import { reportLabels } from "./report-i18n";
 
 // Email-safe HTML: tables + inline styles (Gmail strips <style> and most layout CSS).
@@ -14,6 +14,7 @@ const statusColor: Record<AnswerStatus, string> = {
   completa: "#059669",
   parcial: "#d97706",
   sin_respuesta: "#dc2626",
+  no_aplica: "#5f5a72",
 };
 
 /** The interview report Emily emails when an interview ends, ordered for a quick read. */
@@ -63,10 +64,30 @@ export function renderInterviewEmail({
       return `<tr><td style="padding:14px 0;border-top:1px solid #e4e0ee">
         <div style="font-size:13px;color:${MUTED}">${i + 1}. ${esc(a.question)}
           <span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:${color}1a;color:${color};font-size:11px;font-weight:600">${label}</span></div>
-        <div style="margin-top:6px;font-size:15px">${esc(a.answer)}</div>
+        <div style="margin-top:6px;font-size:15px">${esc(a.answer)}</div>${branchHtml(a)}
       </td></tr>`;
     })
     .join("");
+
+  // A main answer with branches: the path, how an unclear answer was read, the branch answers.
+  function branchHtml(a: InterviewSummary["answers"][number]) {
+    const asked = a.followUps?.filter((f) => f.status !== "no_aplica") ?? [];
+    const apart = a.followUps?.filter((f) => f.status === "no_aplica") ?? [];
+    return [
+      a.route &&
+        `<div style="margin-top:6px;font-size:13px;color:${ACCENT};font-weight:600">${esc(L.route)}${esc(a.route)}</div>`,
+      a.ambiguityNote &&
+        `<div style="margin-top:4px;font-size:13px;color:${MUTED};font-style:italic">${esc(L.ambiguity)}${esc(a.ambiguityNote)}</div>`,
+      ...asked.map(
+        (f) =>
+          `<div style="margin-top:8px;padding-left:12px;border-left:2px solid ${ACCENT}55"><div style="font-size:13px;color:${MUTED}">${esc(f.question)} <span style="color:${statusColor[f.status]};font-size:11px;font-weight:600">${L.status[f.status]}</span></div><div style="font-size:14px">${esc(f.answer)}</div></div>`,
+      ),
+      apart.length &&
+        `<div style="margin-top:6px;font-size:12px;color:${MUTED}">${esc(L.notApplicable)}${esc(apart.map((f) => f.question).join(" · "))}</div>`,
+    ]
+      .filter(Boolean)
+      .join("");
+  }
 
   const transcript = history
     .map(
@@ -113,6 +134,7 @@ export function renderInterviewEmail({
     ${list(summary.painPoints, L.pains)}
     ${list(summary.insights, L.insights)}
     ${quotes ? `${h2(L.quotes)}${quotes}` : ""}
+    ${list(opportunityLines(summary, L.timeline), L.opportunities)}
     ${list(summary.nextSteps, L.nextSteps)}
 
     ${h2(L.perQuestion)}
@@ -145,10 +167,20 @@ export function renderInterviewEmail({
       L.quotes.toUpperCase(),
       summary.quotes?.map((q) => `“${q}”`),
     ),
+    ...textList(L.opportunities.toUpperCase(), opportunityLines(summary, L.timeline)),
     ...textList(L.nextSteps.toUpperCase(), summary.nextSteps),
     L.perQuestion.toUpperCase(),
-    ...summary.answers.map(
-      (a, i) => `${i + 1}. ${a.question} [${L.status[a.status]}]\n   ${a.answer}`,
+    ...summary.answers.map((a, i) =>
+      [
+        `${i + 1}. ${a.question} [${L.status[a.status]}]\n   ${a.answer}`,
+        a.route && `   ${L.route}${a.route}`,
+        a.ambiguityNote && `   ${L.ambiguity}${a.ambiguityNote}`,
+        ...(a.followUps ?? [])
+          .filter((f) => f.status !== "no_aplica")
+          .map((f) => `   - ${f.question} [${L.status[f.status]}]\n     ${f.answer}`),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     ),
     "",
     L.conversation.toUpperCase(),

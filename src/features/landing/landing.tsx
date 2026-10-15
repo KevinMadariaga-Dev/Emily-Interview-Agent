@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import {
   aiStatus,
   fillFromSpeech,
+  generateBranching,
   generateFromPreset,
   refineQuestions,
   translateDraft,
@@ -20,6 +21,7 @@ import {
   type Draft,
   type Patch,
   type PresetId,
+  type Question,
   type QuestionKind,
   type VoiceId,
   toSlug,
@@ -28,9 +30,7 @@ import { dict, LangProvider, useLang, type Lang, type Strings } from "./i18n";
 import { saveLangCookie } from "./lang-cookie";
 import { InterviewLive } from "./interview-live";
 import {
-  ArrowDown,
   ArrowRight,
-  ArrowUp,
   CheckIcon,
   CopyIcon,
   InboxIcon,
@@ -48,12 +48,12 @@ import {
   BubbleTrail,
   field,
   friendlyError,
-  IconBtn,
   micError,
   primary,
   quiet,
   type Msg,
 } from "./ui";
+import { BranchesView, emptyQuestion, prune, QuestionTree } from "./question-editor";
 import { EmilyList, ResultsList } from "./saved-views";
 import { saveEmily, useSavedEmilys } from "./store";
 import { useEmilyVoice } from "./use-emily-voice";
@@ -404,7 +404,6 @@ export function Landing({ initialLang = "es" }: { initialLang?: Lang }) {
 }
 
 type Section = "crear" | "emilys" | "resultados";
-type Q = { id: number; text: string; kind: QuestionKind };
 type Assist = "voice" | "preset" | null;
 
 function ConfigureForm({
@@ -419,7 +418,10 @@ function ConfigureForm({
 }) {
   const { lang, setLang, t } = useLang();
   const [d, setD] = useState<Omit<Draft, "questions">>(() => emptyDraft(lang));
-  const [questions, setQuestions] = useState<Q[]>([{ id: 0, text: "", kind: "abierta" }]);
+  const [questions, setQuestions] = useState<Question[]>(() => [emptyQuestion()]);
+  const [branchIntent, setBranchIntent] = useState("");
+  const [branching, setBranching] = useState(false);
+  const [branchError, setBranchError] = useState("");
   const [refining, setRefining] = useState(false);
   const [refineNote, setRefineNote] = useState("");
   const [areaDraft, setAreaDraft] = useState("");
@@ -434,7 +436,6 @@ function ConfigureForm({
   const [saveError, setSaveError] = useState("");
   const [translating, setTranslating] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false); // "delete the setup progress?" alert
-  const nextId = useRef(1);
 
   useEffect(() => {
     aiStatus()
@@ -442,14 +443,14 @@ function ConfigureForm({
       .catch(() => {});
   }, []);
 
-  const filled = questions.filter((q) => q.text.trim());
-  const draft: Draft = { ...d, questions: filled.map(({ text, kind }) => ({ text, kind })) };
+  const filled = prune(questions);
+  const draft: Draft = { ...d, questions: filled };
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => setD((x) => ({ ...x, [k]: v }));
 
   const applyPatch = useCallback((p: Patch) => {
     const { questions: qs, ...rest } = p;
     setD((x) => ({ ...x, ...rest }));
-    if (qs?.length) setQuestions(toQuestions(qs).map((q) => ({ id: nextId.current++, ...q })));
+    if (qs?.length) setQuestions(toQuestions(qs));
     setFlash((n) => n + 1);
   }, []);
 
@@ -491,7 +492,7 @@ function ConfigureForm({
       const tr = await translateDraft(draft, next);
       if (!tr) return setLangNote(nt.cantTranslate);
       setD((x) => ({ ...x, project: tr.project, objective: tr.objective, areas: tr.areas }));
-      setQuestions(tr.questions.map((q) => ({ id: nextId.current++, ...q })));
+      setQuestions(toQuestions(tr.questions));
       setFlash((n) => n + 1);
       setLangNote(nt.translated);
     } catch {
@@ -504,7 +505,7 @@ function ConfigureForm({
   /** Starts over: every field empty (the voice studio's "delete progress"). */
   function reset() {
     setD(emptyDraft(lang));
-    setQuestions([{ id: nextId.current++, text: "", kind: "abierta" }]);
+    setQuestions([emptyQuestion()]);
     setAreaDraft("");
     setRefineNote("");
     setLangNote("");
@@ -517,12 +518,30 @@ function ConfigureForm({
     setAreaDraft("");
   }
 
-  function move(i: number, dir: -1 | 1) {
-    const j = i + dir;
-    if (j < 0 || j >= questions.length) return;
-    const copy = [...questions];
-    [copy[i], copy[j]] = [copy[j]!, copy[i]!];
-    setQuestions(copy);
+  /** "Generate branching with AI": the admin's intent → a yes/no question with both branches. */
+  async function genBranch() {
+    if (branching || branchIntent.trim().length < 5) return;
+    setBranching(true);
+    setBranchError("");
+    try {
+      const { question, replaces, absorbs } = await generateBranching(branchIntent, draft);
+      // It takes the place of a question about the same thing (no duplicate), else goes last;
+      // questions that only fit one branch now live in it. One pass over the whole list: the
+      // new question can't reuse an id already taken.
+      setQuestions((qs) => {
+        const kept = qs.filter((x) => x.text.trim() && !absorbs.includes(x.id));
+        const at = kept.findIndex((x) => x.id === replaces);
+        return toQuestions(
+          at < 0 ? [...kept, question] : [...kept.slice(0, at), question, ...kept.slice(at + 1)],
+        );
+      });
+      setBranchIntent("");
+      setFlash((n) => n + 1);
+    } catch (err) {
+      setBranchError(friendlyError(err, t.genBranchError));
+    } finally {
+      setBranching(false);
+    }
   }
 
   async function submit(e: React.FormEvent) {
@@ -817,85 +836,45 @@ function ConfigureForm({
                 </p>
               )}
             </div>
-            <ol className="space-y-2">
-              {questions.map((q, i) => (
-                <li
-                  key={q.id}
-                  // Phones: the question gets the full width, its type and actions go below it.
-                  className="group grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-x-2 gap-y-1.5 transition-[opacity,translate] duration-200 ease-out sm:flex starting:-translate-y-1 starting:opacity-0"
-                >
-                  <span className="text-muted w-5 pt-2.5 text-right text-sm tabular-nums">
-                    {i + 1}
-                  </span>
-                  {/* Grows with the text so long questions are read whole (field-sizing where
-                      supported; rows estimate elsewhere). Enter doesn't add line breaks. */}
-                  <textarea
-                    rows={Math.max(1, Math.ceil(q.text.length / 52))}
-                    className={`${field} field-sizing-content min-h-[2.75rem] resize-none leading-snug ${hl}`}
-                    placeholder={t.questionPh}
-                    aria-label={t.question(i + 1)}
-                    value={q.text}
-                    onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
-                    onChange={(e) =>
-                      setQuestions((qs) =>
-                        qs.map((x) =>
-                          x.id === q.id ? { ...x, text: e.target.value.replace(/\n/g, " ") } : x,
-                        ),
-                      )
-                    }
-                  />
-                  <div className="col-start-2 flex items-center justify-between gap-2 sm:contents">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setQuestions((qs) =>
-                          qs.map((x) =>
-                            x.id === q.id
-                              ? { ...x, kind: x.kind === "abierta" ? "cerrada" : "abierta" }
-                              : x,
-                          ),
-                        )
-                      }
-                      aria-label={t.changeKind(i + 1, q.kind === "abierta" ? t.open : t.closed)}
-                      className={`w-20 shrink-0 rounded-full px-2 py-1 text-xs font-medium transition-colors sm:mt-2 ${
-                        q.kind === "abierta"
-                          ? "bg-accent-soft text-accent"
-                          : "bg-sky-500/15 text-sky-700 dark:text-sky-300"
-                      }`}
-                    >
-                      {q.kind === "abierta" ? t.open : t.closed}
-                    </button>
-                    <span className="flex shrink-0 transition group-focus-within:opacity-100 group-hover:opacity-100 sm:mt-0.5 sm:opacity-60">
-                      <IconBtn label={t.up(i + 1)} onClick={() => move(i, -1)} disabled={i === 0}>
-                        <ArrowUp className="h-4 w-4" />
-                      </IconBtn>
-                      <IconBtn
-                        label={t.down(i + 1)}
-                        onClick={() => move(i, 1)}
-                        disabled={i === questions.length - 1}
-                      >
-                        <ArrowDown className="h-4 w-4" />
-                      </IconBtn>
-                      <IconBtn
-                        label={t.remove(i + 1)}
-                        onClick={() => setQuestions((qs) => qs.filter((x) => x.id !== q.id))}
-                      >
-                        <XIcon className="h-4 w-4" />
-                      </IconBtn>
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <QuestionTree list={questions} onChange={setQuestions} highlight={hl} />
             <button
               type="button"
-              onClick={() =>
-                setQuestions((qs) => [...qs, { id: nextId.current++, text: "", kind: "abierta" }])
-              }
+              onClick={() => setQuestions((qs) => [...qs, emptyQuestion()])}
               className="text-accent mt-3 inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
             >
               <PlusIcon className="h-4 w-4" /> {t.addQuestion}
             </button>
+            {status.llm && (
+              <div className="border-border mt-4 space-y-2 rounded-2xl border border-dashed p-3">
+                <label htmlFor="branch-intent" className="flex items-center gap-1.5 text-sm font-medium">
+                  <SparkIcon className="text-accent h-4 w-4" /> {t.genBranch}
+                </label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    id="branch-intent"
+                    className={field}
+                    placeholder={t.genBranchPh}
+                    value={branchIntent}
+                    maxLength={300}
+                    onChange={(e) => setBranchIntent(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      void genBranch();
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={`${quiet} shrink-0`}
+                    disabled={branching || branchIntent.trim().length < 5}
+                    onClick={() => void genBranch()}
+                  >
+                    {branching ? t.genBranchBusy : t.genBranchGo}
+                  </button>
+                </div>
+                {branchError && <p className="text-sm text-red-600 dark:text-red-400">{branchError}</p>}
+              </div>
+            )}
           </Field>
 
           <Field label={t.areas} htmlFor="area" hint={t.areasHint}>
@@ -1074,7 +1053,13 @@ function VoiceStudio({
   const rtv = useSetupRealtime({
     draftRef,
     onPatch,
-    onMsg: (from, text) => setMsgs((m) => [...m, { from, text }]),
+    // Same speaker twice in a row (an answer completed after interrupting her) → one bubble.
+    onMsg: (from, text) =>
+      setMsgs((m) =>
+        m.at(-1)?.from === from
+          ? [...m.slice(0, -1), { from, text: `${m.at(-1)!.text} ${text}` }]
+          : [...m, { from, text }],
+      ),
     onMode: setMode,
     onDone: () => setPhase("review"),
   });
@@ -1854,13 +1839,14 @@ function ReviewModal({
                 {draft.questions.map((q, i) => (
                   <li
                     key={i}
-                    className="bg-accent-soft/50 flex items-start gap-3 rounded-xl px-4 py-3"
+                    className="bg-accent-soft/50 flex flex-wrap items-start gap-3 rounded-xl px-4 py-3"
                   >
                     <span className="text-accent mt-0.5 text-sm font-semibold tabular-nums">
                       {i + 1}.
                     </span>
-                    <span className="flex-1 text-sm leading-relaxed">{q.text}</span>
+                    <span className="min-w-0 flex-1 text-sm leading-relaxed break-words">{q.text}</span>
                     <KindTag kind={q.kind} />
+                    <BranchesView q={q} />
                   </li>
                 ))}
               </ol>
@@ -2020,13 +2006,15 @@ function Result({
     [t.factLink, c.status],
   ];
   return (
-    <div className="grid gap-12 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-12 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <div className="max-w-2xl space-y-8">
         <div className="space-y-3">
           <p className="text-accent inline-flex items-center gap-2 font-medium">
             <CheckIcon className="h-5 w-5" /> {t.ready}
           </p>
-          <h2 className="text-4xl font-semibold tracking-[-0.03em] text-balance">{c.project}</h2>
+          <h2 className="text-3xl font-semibold tracking-[-0.03em] text-balance break-words sm:text-4xl">
+            {c.project}
+          </h2>
           <p className="text-muted">{c.draft.objective}</p>
         </div>
 
@@ -2052,14 +2040,14 @@ function Result({
               {copied ? t.copied : t.copy}
             </button>
           </div>
-          <p className="text-muted text-xs">{t.domainNote(c.url)}</p>
+          <p className="text-muted text-xs break-words">{t.domainNote(c.url)}</p>
         </div>
 
         <dl className="divide-border border-border divide-y border-y">
           {facts.map(([k, v]) => (
             <div key={k} className="flex justify-between gap-6 py-3 text-sm">
               <dt className="text-muted">{k}</dt>
-              <dd className="text-right font-medium">{v}</dd>
+              <dd className="min-w-0 text-right font-medium break-words">{v}</dd>
             </div>
           ))}
         </dl>
@@ -2083,13 +2071,14 @@ function Result({
           {c.draft.questions.map((q, i) => (
             <li
               key={i}
-              className="border-border bg-card flex items-start gap-3 rounded-xl border px-4 py-3"
+              className="border-border bg-card flex flex-wrap items-start gap-3 rounded-xl border px-4 py-3"
             >
               <span className="text-accent w-5 shrink-0 text-sm font-medium tabular-nums">
                 {i + 1}
               </span>
-              <span className="flex-1 text-sm leading-relaxed">{q.text}</span>
+              <span className="min-w-0 flex-1 text-sm leading-relaxed break-words">{q.text}</span>
               <KindTag kind={q.kind} />
+              <BranchesView q={q} />
             </li>
           ))}
         </ol>

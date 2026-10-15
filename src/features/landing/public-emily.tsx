@@ -57,7 +57,8 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
   const t = dict[draft.locale];
   const { phase, voice, asking } = s;
   const total = draft.questions.length;
-  const current = asking >= 0 ? draft.questions[asking] : undefined;
+  // The exact question (a branch one inside a branch), else its main question.
+  const current = s.question ?? (asking >= 0 ? draft.questions[asking] : undefined);
   const recording = voice.state === "recording";
 
   const status =
@@ -73,11 +74,13 @@ function VoiceStage({ draft, slug }: { draft: Draft; slug: string }) {
               ? t.pListening
               : voice.state === "transcribing"
                 ? t.pUnderstanding
-                : t.pThinking;
+                : s.realtime
+                  ? t.pListening // realtime is always listening between turns
+                  : t.pThinking;
   const tone =
     voice.state === "speaking" || phase === "summarizing"
       ? "bg-fuchsia-300"
-      : recording
+      : recording || (s.realtime && voice.state === "idle" && phase !== "ready")
         ? "bg-emerald-300"
         : "bg-violet-300";
 

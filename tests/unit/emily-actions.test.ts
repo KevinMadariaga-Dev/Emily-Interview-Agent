@@ -32,6 +32,7 @@ const summary: InterviewSummary = {
   painPoints: [],
   quotes: [],
   nextSteps: [],
+  opportunities: [],
 };
 const saved = {
   slug: "boutique-luna",

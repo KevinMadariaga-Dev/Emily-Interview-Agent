@@ -101,9 +101,18 @@ export async function saveInterviewToNotion(
     // Notion takes ≤100 blocks per request: create the page with the first batch, then append
     // the rest in order so long interviews keep every line.
     const [first, ...rest] = chunks(page.children, NOTION_BATCH);
-    const created = await notionRequest<{ id: string; url: string }>("/pages", {
-      method: "POST",
-      body: { ...page, children: first ?? [] },
+    const create = (properties: Record<string, unknown>) =>
+      notionRequest<{ id: string; url: string }>("/pages", {
+        method: "POST",
+        body: { ...page, properties, children: first ?? [] },
+      });
+    // A database made before "Urgencia" existed lacks that column (pnpm notion:setup adds it):
+    // save the page without it rather than lose the report.
+    const created = await create(page.properties).catch((err) => {
+      if (!("Urgencia" in page.properties) || !/Urgencia/.test(String(err))) throw err;
+      const rest: Record<string, unknown> = { ...page.properties };
+      delete rest.Urgencia;
+      return create(rest);
     });
     for (const batch of rest)
       await notionRequest(`/blocks/${created.id}/children`, {

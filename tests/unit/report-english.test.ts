@@ -24,6 +24,7 @@ const summary = {
   painPoints: ["Manual inventory"],
   quotes: ["We do it by hand"],
   nextSteps: ["Offer a simple inventory tool"],
+  opportunities: [],
 };
 const history = [
   { role: "emily" as const, text: "Hi, I'm Emily." },

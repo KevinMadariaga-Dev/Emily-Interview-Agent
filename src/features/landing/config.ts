@@ -1,7 +1,21 @@
 import { z } from "zod";
+import {
+  flatten,
+  hasBranches,
+  classifyTimeline,
+  normalizeQuestions,
+  questionNodeSchema,
+  PURPOSES,
+  skipped,
+  TIMELINES,
+  URGENCY,
+  type Branch,
+  type Timeline,
+  type Question,
+  type QuestionKind,
+} from "./question-tree";
 
-export type QuestionKind = "abierta" | "cerrada";
-export type Question = { text: string; kind: QuestionKind };
+export type { Question, QuestionKind } from "./question-tree";
 
 /**
  * Emily's voices: female only, each validated in Spanish with gpt-4o-mini-tts + fixed language
@@ -46,16 +60,8 @@ export const patchSchema = z.object({
   company: z.string().max(120).optional(),
   project: z.string().max(160).optional(),
   objective: z.string().max(800).optional(),
-  // LLMs return {text, kind}; templates and older paths return plain strings.
-  questions: z
-    .array(
-      z.union([
-        z.string().min(3).max(300),
-        z.object({ text: z.string().min(3).max(300), kind: z.enum(["abierta", "cerrada"]) }),
-      ]),
-    )
-    .max(15)
-    .optional(),
+  // LLMs return {text, kind, branches?}; templates and older paths return plain strings.
+  questions: z.array(z.union([z.string().min(3).max(300), questionNodeSchema])).max(15).optional(),
   voice: z.enum(voiceIds).optional(),
   reportEmail: z.email().max(200).optional(),
   areas: z.array(z.string().min(1).max(60)).max(10).optional(),
@@ -235,16 +241,22 @@ const CLOSED =
 export const kindOf = (text: string): QuestionKind =>
   CLOSED.test(text.trim()) ? "cerrada" : "abierta";
 
-export function toQuestions(qs: NonNullable<Patch["questions"]>): Question[] {
-  return qs.map((q) => (typeof q === "string" ? { text: q, kind: kindOf(q) } : q));
-}
+/** Questions from any source (strings, {text, kind}, trees) → a valid tree with ids. */
+export const toQuestions = (qs: unknown): Question[] => normalizeQuestions(qs, kindOf);
 
 // ── Interview success ────────────────────────────────────────────────────────────────────────
 
-export type AnswerStatus = "completa" | "parcial" | "sin_respuesta";
+/** "no_aplica": a question of the branch the participant's answer didn't lead to. */
+export type AnswerStatus = "completa" | "parcial" | "sin_respuesta" | "no_aplica";
 
-/** % of the required information obtained: complete = 1, partial = ½, missing = 0. */
-export function coverage(answers: { status: AnswerStatus }[]) {
+/**
+ * % of the required information obtained: complete = 1, partial = ½, missing = 0. Questions that
+ * don't apply (the other branch) don't count; sub-answers of a branch count like any question.
+ */
+export function coverage(
+  top: { status: AnswerStatus; followUps?: { status: AnswerStatus }[] }[],
+) {
+  const answers = top.flatMap((a) => [a, ...(a.followUps ?? [])]).filter((a) => a.status !== "no_aplica");
   if (!answers.length) return 0;
   const points = answers.reduce(
     (n, a) => n + (a.status === "completa" ? 1 : a.status === "parcial" ? 0.5 : 0),
@@ -272,25 +284,12 @@ const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max
  */
 export function normalizeDraft(raw: unknown): Draft {
   const d = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const qs = (Array.isArray(d.questions) ? d.questions : [])
-    .map((q): string | Question | null =>
-      typeof q === "string"
-        ? q.slice(0, 300)
-        : q && typeof q === "object" && typeof (q as Question).text === "string"
-          ? {
-              text: (q as Question).text.slice(0, 300),
-              kind: (q as Question).kind === "cerrada" ? "cerrada" : "abierta",
-            }
-          : null,
-    )
-    .filter((q): q is string | Question => q !== null)
-    .slice(0, 15);
   return {
     recipientName: str(d.recipientName, 120),
     company: str(d.company, 120),
     project: str(d.project, 160),
     objective: str(d.objective, 800),
-    questions: toQuestions(qs as NonNullable<Patch["questions"]>).filter((q) => q.text.trim()),
+    questions: toQuestions(d.questions),
     // Any retired voice (male/neutral, or ones that failed validation) falls back to Marin.
     voice: voiceIds.includes(d.voice as VoiceId) ? (d.voice as VoiceId) : "marin",
     reportEmail: str(d.reportEmail, 254).trim(),
@@ -305,27 +304,137 @@ export function normalizeDraft(raw: unknown): Draft {
   };
 }
 
+// A summary is never rejected for being long (the model or the no-AI fallback can overshoot):
+// texts and lists are cut to their limits instead, so an interview is always saved.
+const text = (max: number) => z.string().transform((s) => s.slice(0, max));
+const list = <T extends z.ZodType>(item: T, max: number) =>
+  z.array(item).transform((a) => a.slice(0, max));
+
+const answerSchema = z.object({
+  questionId: text(40).optional(),
+  question: text(400),
+  answer: text(2000),
+  status: z.enum(["completa", "parcial", "sin_respuesta", "no_aplica"]),
+  // Optional labels: an unknown value (a model may translate or invent one) is dropped, never
+  // a reason to reject the whole summary.
+  /** A yes/no question with branches: the one taken ("n/a" = no yes/no decision). */
+  branchTaken: z.enum(["yes", "no", "n/a"]).optional().catch(undefined),
+  /** What the question was after (from the Emily's question). */
+  purpose: z.enum(PURPOSES).optional().catch(undefined),
+  /** By when they want it, when the answer is about wanting something new or an improvement. */
+  timeline: z.enum(TIMELINES).optional().catch(undefined),
+});
+
 /** What ChatGPT returns at the end of an interview (also validates results saved in the DB). */
 export const summarySchema = z.object({
-  summary: z.string().max(1500),
-  insights: z.array(z.string().max(300)).max(8),
-  answers: z
-    .array(
-      z.object({
-        question: z.string().max(400),
-        answer: z.string().max(2000),
-        status: z.enum(["completa", "parcial", "sin_respuesta"]),
+  summary: text(1500),
+  insights: list(text(300), 8),
+  answers: list(
+      answerSchema.extend({
+        /** Path followed, in short words: "Tiene web → funciones → problemas". */
+        route: text(300).optional(),
+        /** When Emily had to interpret or clarify the answer to choose the branch. */
+        ambiguityNote: text(400).optional(),
+        /** Branch questions (both branches; the one not taken as "no_aplica"). */
+        followUps: list(answerSchema, 40).optional(),
       }),
-    )
-    .max(20),
-  objective: z.object({ met: z.boolean(), reason: z.string().max(400) }),
+    20,
+  ),
+  objective: z.object({ met: z.boolean(), reason: text(400) }),
   // Relevant information extracted from the conversation (default [] keeps older saved results valid).
-  keyFacts: z.array(z.string().max(300)).max(12).default([]),
-  painPoints: z.array(z.string().max(300)).max(8).default([]),
-  quotes: z.array(z.string().max(400)).max(6).default([]),
-  nextSteps: z.array(z.string().max(300)).max(6).default([]),
+  keyFacts: list(text(300), 12).default([]),
+  painPoints: list(text(300), 8).default([]),
+  quotes: list(text(400), 6).default([]),
+  nextSteps: list(text(300), 6).default([]),
+  /** Everything they want to have or improve, with by when ("Oportunidades y plazos"). */
+  opportunities: list(
+      z.object({
+        item: text(200),
+        timeline: z.enum(TIMELINES).catch("unknown"),
+        /** Their words on the timing ("para antes de diciembre"). */
+        detail: text(200).optional(),
+      }),
+    10,
+  ).default([]),
 });
 export type InterviewSummary = z.infer<typeof summarySchema>;
+
+/**
+ * Puts the summary's answers in the shape of the Emily's question tree: one answer per main
+ * question (in order, with its id), and under a question with branches every branch question —
+ * the ones of the branch the participant's answer didn't lead to marked "no_aplica" (never
+ * "sin_respuesta"), the rest as the model graded them (or "sin_respuesta" if missing).
+ */
+export function settleBranches(
+  questions: Question[],
+  answers: InterviewSummary["answers"],
+  locale: "es" | "en",
+): InterviewSummary["answers"] {
+  const all = answers.flatMap((a) => [a, ...(a.followUps ?? [])]);
+  const byId = new Map(all.filter((a) => a.questionId).map((a) => [a.questionId!, a]));
+  const taken: Record<string, Branch> = {};
+  for (const a of all)
+    if (a.questionId && (a.branchTaken === "yes" || a.branchTaken === "no"))
+      taken[a.questionId] = a.branchTaken;
+  const out = skipped(questions, taken);
+  const none = locale === "es" ? "Sin respuesta" : "No answer";
+  const na = locale === "es" ? "No aplica" : "Doesn't apply";
+  return questions.map((q, i) => {
+    const main = byId.get(q.id) ?? answers[i] ?? { question: q.text, answer: none, status: "sin_respuesta" as const };
+    if (!hasBranches(q)) return { ...main, questionId: q.id, followUps: undefined };
+    const subs = flatten([...(q.branches?.yes ?? []), ...(q.branches?.no ?? [])]).map(({ q: s }) => {
+      // Not on the path: the other branch, or any branch of a question never decided.
+      const apart = out.has(s.id) || !onPath(questions, s.id, taken);
+      if (apart) return { questionId: s.id, question: s.text, answer: na, status: "no_aplica" as const };
+      const a = byId.get(s.id);
+      const answered = !!a && a.status !== "sin_respuesta";
+      return {
+        questionId: s.id,
+        question: s.text,
+        answer: a?.answer ?? none,
+        status: a?.status ?? ("sin_respuesta" as const),
+        ...(a?.branchTaken && { branchTaken: a.branchTaken }),
+        ...(s.purpose && { purpose: s.purpose }),
+        // A "by when" answer always gets its timeline (the local reading if the model gave none).
+        ...((a?.timeline || (s.purpose === "timeline" && answered)) && {
+          timeline: a?.timeline ?? classifyTimeline(a!.answer),
+        }),
+      };
+    });
+    return { ...main, questionId: q.id, branchTaken: taken[q.id] ?? "n/a", followUps: subs };
+  });
+}
+
+/** What they want to have or improve, most urgent first ("asap" … "unknown"). */
+export const byUrgency = <T extends { timeline: Timeline }>(items: T[]) =>
+  [...items].sort((a, b) => URGENCY[a.timeline] - URGENCY[b.timeline]);
+
+/** "Oportunidades y plazos" as lines, most urgent first: "Sistema de inventario — Lo antes posible («para este mes»)". */
+export function opportunityLines(
+  s: Partial<Pick<InterviewSummary, "opportunities">>,
+  labels: Record<Timeline, string>,
+) {
+  return byUrgency(s.opportunities ?? []).map(
+    (o) => `${o.item} — ${labels[o.timeline]}${o.detail ? ` («${o.detail}»)` : ""}`,
+  );
+}
+
+/** The most urgent timeline in an interview (Notion's "Urgencia"); null = nothing wanted. */
+export function mostUrgent(s: Pick<InterviewSummary, "opportunities">): Timeline | null {
+  return byUrgency(s.opportunities)[0]?.timeline ?? null;
+}
+
+/** Whether every yes/no above a branch question was decided toward it. */
+function onPath(questions: Question[], id: string, taken: Record<string, Branch>) {
+  const nodes = flatten(questions);
+  let n = nodes.find((x) => x.q.id === id);
+  while (n?.parent) {
+    if (taken[n.parent.id] !== n.parent.branch) return false;
+    const parentId = n.parent.id;
+    n = nodes.find((x) => x.q.id === parentId);
+  }
+  return true;
+}
 
 /** URL-safe slug from a project name ("Boutique Luna" → "boutique-luna"). */
 export const toSlug = (s: string) =>

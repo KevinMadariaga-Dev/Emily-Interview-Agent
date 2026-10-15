@@ -8,6 +8,13 @@ import { setupDirective, setupInstructions } from "./realtime-prompt";
 import type { OrbMode } from "./voice-orb";
 import type { VoiceState } from "./use-emily-voice";
 
+/** A holding line with no question ("let me think how to fit it all…", "dame un segundo…"). */
+export const isFiller = (text: string) =>
+  !/[?？]/.test(text) &&
+  /\b(d[eé]jame|dame un|un momento|un segundo|voy a (pensar|organizar)|let me|give me a|one (moment|sec))/i.test(
+    text,
+  );
+
 /**
  * Voice setup on OpenAI Realtime: Emily answers in about a second (semantic turn detection, the
  * user can talk over her), while each thing the user says is turned into fields in the background
@@ -35,6 +42,7 @@ export function useSetupRealtime({
   const closing = useRef(false); // goodbye requested: hand over to the review once it's heard
   const paused = useRef(false);
   const skipGreeting = useRef(false);
+  const nudged = useRef(false); // this turn already got a "now ask" nudge
   const replyWatch = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Background fill queue: one fillFromSpeech at a time, later answers batched together.
   const pending = useRef<string[]>([]);
@@ -45,12 +53,13 @@ export function useSetupRealtime({
 
   const es = () => draftRef.current.locale === "es";
 
-  function reply(directive = setupDirective(draftRef.current)) {
+  /** `scripted`: say exactly that line, with no setup rules to argue with (the goodbye). */
+  function reply(directive = setupDirective(draftRef.current), scripted = false) {
     rt.current?.send({
       type: "response.create",
-      response: {
-        instructions: `${setupInstructions(draftRef.current.locale)}\n\n${directive}`,
-      },
+      response: scripted
+        ? { instructions: directive, tool_choice: "none" }
+        : { instructions: `${setupInstructions(draftRef.current.locale)}\n\n${directive}` },
     });
   }
 
@@ -111,7 +120,12 @@ export function useSetupRealtime({
     const line = es()
       ? "¡Listo! Te muestro el resumen para que lo revises."
       : "All set! Here's the summary for you to review.";
-    reply(es() ? `AHORA: di solo esto: "${line}". No llames herramientas.` : `NOW: say only: "${line}". Don't call tools.`);
+    reply(
+      es()
+        ? `Eres Emily. Di exactamente esta frase, en español, y nada más: "${line}"`
+        : `You are Emily. Say exactly this sentence, in English, and nothing else: "${line}"`,
+      true,
+    );
     setTimeout(() => closing.current && finish(), 12_000); // if "audio stopped" never comes
   }
 
@@ -145,6 +159,7 @@ export function useSetupRealtime({
         break;
       case "input_audio_buffer.committed":
         watchReply(false);
+        nudged.current = false;
         if (!paused.current && !closing.current) reply();
         break;
       case "response.created":
@@ -163,12 +178,13 @@ export function useSetupRealtime({
         }
         break;
       }
-      case "response.output_audio_transcript.done": {
-        const text = String(e.transcript ?? "").trim();
-        if (skipGreeting.current) skipGreeting.current = false;
-        else if (text) onMsg("emily", text);
+      case "emily.interrupted":
+        skipGreeting.current = false; // the greeting (on screen already) was cut: skip nothing else
         break;
-      }
+      case "emily.said": // heard in full (interrupted replies never get here)
+        if (skipGreeting.current) skipGreeting.current = false;
+        else onMsg("emily", String(e.text));
+        break;
       case "response.done": {
         const output = ((e.response as { output?: unknown[] })?.output ?? []) as {
           type: string;
@@ -182,12 +198,31 @@ export function useSetupRealtime({
             item: { type: "function_call_output", call_id: call.call_id, output: "ok" },
           });
         if (calls.length) void wrapUp();
+        // Every turn ends in a question. If she only said a filler ("let me think…"), she still
+        // owes it: once per turn, so a confused model can't loop.
+        const said = output
+          .flatMap((o) => (o as { content?: { transcript?: string }[] }).content ?? [])
+          .map((c) => c.transcript ?? "")
+          .join(" ");
+        const status = (e.response as { status?: string })?.status;
+        if (
+          status === "completed" &&
+          isFiller(said) &&
+          !skipGreeting.current &&
+          !calls.length &&
+          !closing.current &&
+          !paused.current &&
+          !nudged.current
+        ) {
+          nudged.current = true;
+          reply(
+            `${setupDirective(draftRef.current)}\n${es() ? "Ya dijiste una frase de espera: ahora haz directamente la pregunta, sin repetir el acuse." : "You already said a holding line: now ask the question directly, without repeating the acknowledgement."}`,
+          );
+        }
         break;
       }
-      case "error":
-        // Cancelling when nothing is playing is expected (wrap-up, typed answers).
-        if ((e.error as { code?: string })?.code !== "response_cancel_not_active")
-          console.warn("[emily setup realtime]", e.error);
+      case "error": // the expected ones (nothing left to cancel) are filtered out upstream
+        console.warn("[emily setup realtime]", e.error);
         break;
     }
   }
@@ -252,8 +287,7 @@ export function useSetupRealtime({
   function sendText(text: string) {
     if (!rt.current) return;
     if (paused.current) resume();
-    rt.current.send({ type: "response.cancel" });
-    rt.current.send({ type: "output_audio_buffer.clear" });
+    rt.current.interrupt(); // a typed answer takes the turn like speech does
     rt.current.send({
       type: "conversation.item.create",
       item: { type: "message", role: "user", content: [{ type: "input_text", text }] },

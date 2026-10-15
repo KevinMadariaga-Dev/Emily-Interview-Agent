@@ -12,7 +12,7 @@ const isReasoningModel = (model: string) => /^(gpt-5|o\d)/.test(model);
  */
 export const openAiProvider: LlmProvider = {
   name: "openai",
-  async completeJson({ messages, model, temperature = 0.2 }) {
+  async completeJson({ messages, model, temperature = 0.2, reasoningEffort }) {
     const chosen = model ?? env().LLM_MODEL;
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -23,7 +23,7 @@ export const openAiProvider: LlmProvider = {
       body: JSON.stringify({
         model: chosen,
         ...(isReasoningModel(chosen)
-          ? { reasoning_effort: env().LLM_REASONING_EFFORT }
+          ? { reasoning_effort: reasoningEffort ?? env().LLM_REASONING_EFFORT }
           : { temperature }),
         response_format: { type: "json_object" },
         messages,

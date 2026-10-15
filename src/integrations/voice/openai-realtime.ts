@@ -27,6 +27,10 @@ export async function createRealtimeSession(opts: {
   voice: string;
   language: "es" | "en";
   tools: unknown[];
+  /** How soon a pause ends the turn: "high" for short setup answers, "auto" for interviews. */
+  eagerness?: "auto" | "high";
+  /** false: the user's voice never cuts Emily off (interviews: every question is heard whole). */
+  interruptResponse?: boolean;
 }) {
   const res = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
@@ -51,9 +55,9 @@ export async function createRealtimeSession(opts: {
             // (create_response off) with a directive for each turn — see turnDirective().
             turn_detection: {
               type: "semantic_vad",
-              eagerness: "auto",
+              eagerness: opts.eagerness ?? "auto",
               create_response: false,
-              interrupt_response: true,
+              interrupt_response: opts.interruptResponse ?? true,
             },
             noise_reduction: { type: "near_field" },
           },

@@ -22,6 +22,10 @@ const summary = {
   painPoints: ["No saben qué sistema de inventario usar"],
   quotes: ["Lo llevamos a mano, no sé bien"],
   nextSteps: ["Proponer un sistema de inventario simple"],
+  opportunities: [
+    { item: "Página web con pedidos en línea", timeline: "long" as const },
+    { item: "Sistema de inventario", timeline: "asap" as const, detail: "para este mes" },
+  ],
 };
 const history = [
   { role: "emily" as const, text: "Hola, soy Emily." },
@@ -62,6 +66,7 @@ describe("toNotionInterviewPage", () => {
       "Dolores y problemas",
       "Hallazgos",
       "Citas del participante",
+      "Oportunidades y plazos",
       "Próximos pasos y oportunidades",
       "Preguntas y respuestas",
       "Conversación completa",
@@ -88,5 +93,18 @@ describe("toNotionInterviewPage", () => {
     const convo = blocks.slice(blocks.findIndex((b) => text(b) === "Conversación completa") + 1);
     expect(convo).toHaveLength(history.length);
     expect(blocks.length).toBeGreaterThan(100); // saveInterviewToNotion appends in batches
+  });
+});
+
+describe("toNotionInterviewPage: urgency", () => {
+  it("'Urgencia' is the most urgent thing they want; opportunities ordered by urgency", () => {
+    const page = toNotionInterviewPage({ dataSourceId: "ds", draft, summary, history: [], at: new Date() });
+    expect(page.properties.Urgencia?.select.name).toBe("Lo antes posible");
+    const lines = (page.children as Block[]).filter((b) => b.type === "to_do").map(text);
+    expect(lines.indexOf("Sistema de inventario — Lo antes posible («para este mes»)")).toBeLessThan(
+      lines.indexOf("Página web con pedidos en línea — Más adelante"),
+    );
+    const none = toNotionInterviewPage({ dataSourceId: "ds", draft, summary: { ...summary, opportunities: [] }, history: [], at: new Date() });
+    expect(none.properties.Urgencia).toBeUndefined(); // nothing wanted: no urgency
   });
 });

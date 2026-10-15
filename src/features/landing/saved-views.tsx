@@ -6,7 +6,7 @@ import { translateDraft, translateSummary } from "./ai";
 import { coverage, LINK_BASE, verdict, voices } from "./config";
 import { ArrowRight, CheckIcon, CopyIcon, MicIcon, PlusIcon, SparkIcon, XIcon } from "./icons";
 import { dict, useLang, type Lang } from "./i18n";
-import { InterviewLive, SuccessReport } from "./interview-live";
+import { BranchDetail, InterviewLive, SuccessReport } from "./interview-live";
 import {
   deleteEmily,
   importBrowserEmilys,
@@ -393,6 +393,7 @@ function ResultItem({ r: saved, emily }: { r: SavedResult; emily?: SavedEmily })
                   <div key={a.question} className="space-y-1 py-3 first:pt-0">
                     <dt className="text-muted text-sm">{a.question}</dt>
                     <dd className="text-sm">{a.answer}</dd>
+                    <BranchDetail a={a} />
                   </div>
                 ))}
               </dl>

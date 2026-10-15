@@ -50,6 +50,7 @@ export async function POST(request: Request) {
       voice: body.voice,
       language: body.locale,
       tools: [SETUP_DONE_TOOL],
+      eagerness: "high",
     };
   } else {
     const row = await emilyRepository.find(body.slug);
@@ -60,6 +61,10 @@ export async function POST(request: Request) {
       voice: draft.voice,
       language: draft.locale,
       tools: [PROGRESS_TOOL],
+      interruptResponse: false, // a question is never cut off: she listens once she's done
+      // Turns end fast; the app then gives a mid-answer pause 2 s before Emily answers (and
+      // drops that reply if they keep talking), so a pause never splits one answer in two.
+      eagerness: "high",
     };
   }
 

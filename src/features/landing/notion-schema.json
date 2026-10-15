@@ -56,5 +56,31 @@
     "number": {
       "format": "number"
     }
+  },
+  "Urgencia": {
+    "select": {
+      "options": [
+        {
+          "name": "Lo antes posible",
+          "color": "red"
+        },
+        {
+          "name": "Pronto",
+          "color": "orange"
+        },
+        {
+          "name": "Más adelante",
+          "color": "blue"
+        },
+        {
+          "name": "Por ahora no",
+          "color": "gray"
+        },
+        {
+          "name": "Sin plazo",
+          "color": "default"
+        }
+      ]
+    }
   }
 }

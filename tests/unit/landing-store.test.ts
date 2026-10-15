@@ -35,6 +35,7 @@ const summary = {
   painPoints: [],
   quotes: [],
   nextSteps: [],
+  opportunities: [],
 } satisfies InterviewSummary;
 const draft = { project: "Boutique Luna", questions: [], locale: "es" } as unknown as Draft;
 const emily = { slug: "boutique-luna", draft, createdAt: "2026-10-01T00:00:00.000Z" };
